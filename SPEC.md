@@ -44,8 +44,8 @@ ext/channels/* ───┘        ↓
 
 Receives messages, assembles context, calls model, executes tool calls, replies.
 
-- Built on `FastAPI` + `uvicorn` for runtime service endpoints.
 - Uses `pydantic-ai` for model/tool orchestration and provider compatibility.
+- Uses `uvicorn` only for optional webhook/admin ASGI endpoints.
 - Async Python throughout.
 
 **2. Prompt and bootstrap state machine**
@@ -154,10 +154,10 @@ See `docs/decisions/009-observability.md`.
 ## Runtime
 
 - Python 3.12+
-- `fastapi`
 - `pydantic-ai`
 - `uvicorn`
 - `aiosqlite`
+- No web framework
 
 ## Context Assembly Per Turn
 
