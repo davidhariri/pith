@@ -21,7 +21,7 @@ A minimal, self-extending personal AI agent. Async Python, Docker-contained.
 
 ```
 Telegram (core) ──┐
-                   ├─→ Agent Loop ─→ Model Adapter
+                   ├─→ Agent Loop ─→ PydanticAI Agent
 ext/channels/* ───┘        ↓
                      ┌───────────┐
                      │ Tools     │
@@ -42,7 +42,11 @@ ext/channels/* ───┘        ↓
 
 **1. Agent runtime**
 
-Receives messages, assembles context, calls model, executes tool calls, replies. Async Python with `httpx`. No web framework.
+Receives messages, assembles context, calls model, executes tool calls, replies.
+
+- Built on `FastAPI` + `uvicorn` for runtime service endpoints.
+- Uses `pydantic-ai` for model/tool orchestration and provider compatibility.
+- Async Python throughout.
 
 **2. Prompt and bootstrap state machine**
 
@@ -118,13 +122,12 @@ Calls external MCP tools (stdio or HTTP). MCP server definitions come from exter
 - Runtime reads config from `PITH_CONFIG` or default host path `~/.config/pith/config.yaml`.
 - In Docker, this config is mounted read-only (for example `/run/pith/config.yaml`).
 - Config is runtime-owned and not agent-autonomous state.
+- Model/provider configuration is also loaded from this external config.
+- API secrets are loaded from `.env`/environment variables referenced by config.
 
-**9. Model adapter**
+**9. Model runtime**
 
-Provider-agnostic interface with one canonical internal message/tool schema.
-
-- Start with OpenAI-compatible tool-calling.
-- Add adapters only when needed.
+`pydantic-ai` is the compatibility layer for model providers and tool-calling.
 
 See `docs/decisions/010-model-adapter.md`.
 
@@ -151,10 +154,10 @@ See `docs/decisions/009-observability.md`.
 ## Runtime
 
 - Python 3.12+
+- `fastapi`
+- `pydantic-ai`
 - `uvicorn`
-- `httpx`
 - `aiosqlite`
-- No web framework
 
 ## Context Assembly Per Turn
 

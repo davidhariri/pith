@@ -5,7 +5,7 @@
 
 ## Context
 
-The agent should freely evolve workspace artifacts (extensions, memory, soul) while runtime integrations such as MCP server definitions remain operator-controlled.
+The agent should freely evolve workspace artifacts (extensions, memory, soul) while runtime integrations such as MCP server definitions and model setup remain operator-controlled.
 
 ## Decision
 
@@ -17,13 +17,15 @@ Use an external `config.yaml` as runtime control-plane config.
 - In Docker, mount this config file read-only into the container (for example `/run/pith/config.yaml`).
 - This config is outside workspace and not part of autonomous agent-writable state.
 - MCP server definitions (stdio/http) are configured here.
+- Model/provider selection and runtime model options are configured here.
 - Secrets should be referenced via env vars, not hardcoded in workspace files.
+- `.env` (or host environment) supplies API keys/secrets referenced by config.
 - For simplicity in v1, config changes are applied on restart.
 
 ## Rationale
 
 - Clean separation between operator-owned integration config and agent-owned workspace state.
-- Keeps MCP/server wiring explicit and auditable.
+- Keeps MCP/server/model wiring explicit and auditable.
 - Preserves autonomy where it is useful without letting the agent mutate control-plane wiring.
 
 ## Rejected alternatives
