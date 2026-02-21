@@ -163,6 +163,11 @@ See `docs/decisions/009-observability.md`.
 - `aiosqlite`
 - No web framework
 
+## Developer Tooling
+
+- `uv` for dependency management, virtualenv management, and command execution
+- `ruff` for linting and formatting
+
 ## Context Assembly Per Turn
 
 1. Fixed system prompt (bootstrap or normal, selected by runtime state)

@@ -7,6 +7,7 @@
 - [ ] Setup CLI: Telegram setup is optional and skippable.
 - [ ] Setup CLI: Telegram setup can be run later from the same CLI.
 - [ ] Chat CLI: user can chat with the agent from CLI without Telegram.
+- [ ] Tooling baseline: project uses `uv` for environment/deps and `ruff` for lint/format.
 - [ ] Config handling: setup CLI writes/updates external `config.yaml` and `.env` references with validation and clear errors.
 - [ ] Bootstrap mode: runtime uses bootstrap prompt mode until required profile fields exist in SQLite.
 - [ ] Persona layer: `SOUL.md` is always injected and remains agent-editable.
