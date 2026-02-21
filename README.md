@@ -16,3 +16,11 @@ uv sync --all-groups
 uv run ruff check .
 uv run ruff format .
 ```
+
+## Planned CLI Surface (v1)
+
+- `pith setup`
+- `pith run`
+- `pith chat` (interactive streaming TUI)
+- `pith doctor`
+- `pith logs tail`

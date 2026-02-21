@@ -20,22 +20,22 @@ A minimal, self-extending personal AI agent. Async Python, Docker-contained.
 ## Architecture
 
 ```
-Telegram (core) ──┐
-                   ├─→ Agent Loop ─→ PydanticAI Agent
-ext/channels/* ───┘        ↓
-                     ┌───────────┐
-                     │ Tools     │
-                     │ - read    │
-                     │ - write   │
-                     │ - edit    │
-                     │ - bash    │
-                     │ - tool_call
-                     │ - memory_save
-                     │ - memory_search
-                     │ + ext/*   │
-                     └───────────┘
-                          ↓
-     SOUL.md + profiles/memory/sessions (SQLite + FTS5)
+CLI TUI (core) ──┐
+Telegram (core) ─┼─→ Agent Loop ─→ PydanticAI Agent
+ext/channels/* ──┘        ↓
+                    ┌───────────┐
+                    │ Tools     │
+                    │ - read    │
+                    │ - write   │
+                    │ - edit    │
+                    │ - bash    │
+                    │ - tool_call
+                    │ - memory_save
+                    │ - memory_search
+                    │ + ext/*   │
+                    └───────────┘
+                         ↓
+    SOUL.md + profiles/memory/sessions (SQLite + FTS5)
 ```
 
 ## Components
@@ -61,9 +61,9 @@ See `docs/decisions/011-bootstrap-profile-state.md`.
 
 **3. Channels**
 
-- Core channel: Telegram.
+- Core channels: CLI TUI and Telegram.
 - Extension channels follow `connect()`, `recv()`, `send()`.
-- Telegram remains in core so extension bugs cannot sever the primary control path.
+- Both core channels stay in runtime so extension bugs cannot sever control paths.
 
 See `docs/decisions/001-telegram-polling.md` and `docs/decisions/003-extension-interface.md`.
 
@@ -154,6 +154,18 @@ Minimal structured audit trail:
 - Keep logs local and simple.
 
 See `docs/decisions/009-observability.md`.
+
+**12. Interaction surfaces**
+
+- CLI surface: `pith setup`, `pith run`, `pith chat`, `pith doctor`, `pith logs tail`.
+- `pith chat` is the primary operator interface: interactive TUI with streaming assistant output.
+- `pith chat` shows live runtime states and tool-call events while a turn is executing.
+- Telegram is intentionally limited UX: concise text responses and no full live event stream.
+- Both CLI chat and Telegram support slash commands: `/new`, `/compact`, `/info`.
+- Slash commands are handled before model invocation and do not require tool calls.
+- `/new` starts a new session, `/compact` compacts current session history, `/info` shows runtime/session status.
+
+See `docs/decisions/014-interaction-surfaces-and-slash-commands.md`.
 
 ## Runtime
 
