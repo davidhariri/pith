@@ -5,37 +5,38 @@
 
 ## Context
 
-We want OpenClaw-like memory ergonomics but with a smaller implementation surface.
+We want durable memory with minimal moving parts and no dual source of truth.
 
 ## Decision
 
-Use file-first canonical memory with FTS5 retrieval and explicit lifecycle rules.
+Use DB-native canonical memory in SQLite with FTS5 retrieval and explicit lifecycle rules.
 
 ## Canonical stores
 
-- `MEMORY.md`: durable profile, stable preferences, long-lived facts.
-- `logs/YYYY-MM-DD.md`: daily episodic notes.
+- `memory_entries` table for durable memory records.
+- `memory_fts` virtual table (FTS5) for full-text retrieval.
+- Optional metadata columns: `kind`, `tags`, `source`, `created_at`, `updated_at`.
 
 ## Write policy
 
-- `memory_save(...)` appends to today's `logs/YYYY-MM-DD.md` by default.
-- Durable facts discovered in logs are periodically promoted into `MEMORY.md`.
-- No automatic deletion of canonical memory files in v1.
+- `memory_save(...)` inserts memory records directly into SQLite.
+- Records may be tagged as `durable` or `episodic`.
+- Promotion/cleanup is done by updating DB records, not rewriting markdown files.
+- No automatic hard deletion in v1; use soft-delete/tombstone flags where needed.
 
 ## Retrieval policy
 
-- Index `MEMORY.md` and `logs/*.md` into SQLite FTS5.
-- Retrieve with FTS ranking plus lightweight recency weighting by log date.
+- Query `memory_fts` directly with FTS ranking plus lightweight recency weighting.
 - `memory_search` returns full matched entries with source metadata.
 - Inject top-N de-duplicated full entries per turn.
 
 ## Rationale
 
-- Human-readable memory as source of truth.
+- Single source of truth removes file/index mismatch risk.
 - Retrieval stays fast and dependency-light.
-- Lifecycle policy avoids memory drift while staying simple.
+- Lifecycle policy remains simple and explicit.
 
 ## Rejected alternatives
 
-- DB-only canonical memory (less transparent to humans).
+- File-first canonical memory plus DB index (dual-write complexity).
 - Embedding/vector stack in v1 (more complexity than needed now).

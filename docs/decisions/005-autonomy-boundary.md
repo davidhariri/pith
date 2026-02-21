@@ -17,9 +17,9 @@ The agent may freely create/edit these paths:
 - `workspace/extensions/tools/*`
 - `workspace/extensions/channels/*`
 - `SOUL.md`
-- `MEMORY.md`
-- `logs/*`
 - other user workspace scratch files
+
+The agent may write memory through runtime tools (`memory_save`) rather than direct memory file edits.
 
 ### Zone B: Guarded core and profile state
 

@@ -7,8 +7,8 @@ A minimal, self-extending personal AI agent. Async Python, Docker-contained.
 - **Small core, agent-grown capabilities.** The system ships with the minimum needed to think, remember, communicate, and extend itself.
 - **Auditable.** A human should be able to read the whole core quickly.
 - **Container-first safety boundary.** The container is the primary sandbox.
-- **File-first memory.** Durable memory is human-readable markdown, with an index for fast recall.
-- **Split control planes.** Runtime/integration config lives outside workspace; agent memory and extensions live inside workspace.
+- **SQLite-native continuity.** Memory and session history are stored in SQLite as the single source of truth.
+- **Split control planes.** Runtime/integration config lives outside workspace; agent-editable artifacts live inside workspace.
 
 ## Design Targets
 
@@ -35,7 +35,7 @@ ext/channels/* ───┘        ↓
                      │ + ext/*   │
                      └───────────┘
                           ↓
-     SOUL.md + profiles (SQLite) + MEMORY.md/logs + SQLite FTS5 index
+     SOUL.md + profiles/memory/sessions (SQLite + FTS5)
 ```
 
 ## Components
@@ -94,16 +94,12 @@ See `docs/decisions/003-extension-interface.md` and `docs/decisions/005-autonomy
 
 **6. Memory system**
 
-Canonical memory is file-first:
+Canonical memory is DB-native in SQLite.
 
-- `MEMORY.md`: curated long-term memory and durable project/user facts.
-- `logs/YYYY-MM-DD.md`: daily episodic notes and turn-level learning.
-
-SQLite FTS5 stores a retrieval index over those files.
-
-- On startup and memory-file changes, index sync runs.
+- `memory_save` persists memory entries directly in SQLite.
+- `memory_search` queries SQLite FTS5 and returns full matched memory entries with metadata.
 - Per turn, top ranked memory entries are injected into context.
-- `memory_search` returns full matched entries (with source metadata), not snippets.
+- Session history is also persisted in SQLite for continuity and compaction.
 
 See `docs/decisions/002-system-prompt.md`, `docs/decisions/006-memory-lifecycle-recall.md`, and `docs/decisions/007-session-compaction.md`.
 
@@ -165,7 +161,7 @@ See `docs/decisions/009-observability.md`.
 1. Fixed system prompt (bootstrap or normal, selected by runtime state)
 2. `SOUL.md` (always injected)
 3. Agent/user profile summary from SQLite
-4. Relevant full memory entries from indexed `MEMORY.md` + `logs/*.md`
+4. Relevant full memory entries from SQLite FTS5 index
 5. Conversation history window
 6. New message
 

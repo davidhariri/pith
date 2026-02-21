@@ -1,11 +1,11 @@
-# 002: Fixed prompt + soul + file-first memory context
+# 002: Fixed prompt + soul + DB-native memory context
 
 **Date:** 2026-02-21 (updated)
 **Status:** Accepted
 
 ## Context
 
-The agent must stay stable while still learning over time. We need clear separation between immutable behavior constraints, evolving persona, stable profile records, and durable memory.
+The agent must stay stable while still learning over time. We need clear separation between immutable behavior constraints, evolving persona, stable profile records, and durable continuity storage.
 
 ## Decision
 
@@ -14,7 +14,7 @@ Four layers:
 1. Fixed system prompt in code (not editable by agent at runtime).
 2. `SOUL.md` injected every turn (agent-editable persona layer).
 3. Runtime-managed profile records in SQLite (agent identity and user identity).
-4. File-first memory (`MEMORY.md` + `logs/*.md`) with indexed recall.
+4. DB-native memory and session history in SQLite with indexed recall.
 
 ## Details
 
@@ -41,23 +41,21 @@ Agent identity and user identity are stored as structured runtime records.
 - After bootstrap, updates are guarded and occur only on explicit user direction.
 - These records are injected as compact profile context, not as freeform constantly-mutating text files.
 
-### 4. File-first memory + indexed recall
+### 4. DB-native memory + session history + indexed recall
 
-Canonical memory files:
-- `MEMORY.md` for durable, high-signal facts
-- `logs/YYYY-MM-DD.md` for daily episodic notes
+Memory and session continuity are stored directly in SQLite.
 
-Runtime indexes memory files into SQLite FTS5.
-
+- `memory_save` writes durable memory entries into DB tables.
+- `memory_search` queries SQLite FTS5 and returns full matched entries with metadata.
+- Session messages are persisted in DB and compacted as needed.
 - On each turn, top memory hits are queried and injected.
-- Memory hits include source metadata for traceability.
 
 ## Context assembly
 
 1. Fixed system prompt (bootstrap or normal)
 2. `SOUL.md`
 3. Profile summary (SQLite)
-4. Relevant full memory entries from index
+4. Relevant full memory entries from SQLite FTS5 index
 5. Conversation history window
 6. New message
 
@@ -66,10 +64,11 @@ Runtime indexes memory files into SQLite FTS5.
 - Protects core behavior from accidental self-corruption.
 - Preserves the "alive" quality through an evolving soul file.
 - Keeps identity data stable and less noisy than constantly rewritten files.
-- Maintains transparent, durable, human-editable memory.
+- Eliminates dual-write drift between memory files and retrieval index.
 
 ## Rejected alternatives
 
 - Agent-editable system prompt (too fragile).
 - File-deletion-controlled bootstrap lifecycle (nondeterministic).
 - Fully freeform constantly edited identity files (too unstable).
+- File-first memory with DB-indexed retrieval (extra complexity and potential drift).
