@@ -17,6 +17,7 @@ Use an external `config.yaml` as runtime control-plane config.
 - In Docker, mount this config file read-only into the container (for example `/run/pith/config.yaml`).
 - This config is outside workspace and not part of autonomous agent-writable state.
 - MCP server definitions (stdio/http) are configured here.
+- MCP tool namespace prefix is configured here (default `MCP__`).
 - Model/provider selection and runtime model options are configured here.
 - Secrets should be referenced via env vars, not hardcoded in workspace files.
 - `.env` (or host environment) supplies API keys/secrets referenced by config.

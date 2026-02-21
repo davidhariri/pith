@@ -29,7 +29,7 @@ ext/channels/* ───┘        ↓
                      │ - write   │
                      │ - edit    │
                      │ - bash    │
-                     │ - mcp_call│
+                     │ - tool_call
                      │ - memory_save
                      │ - memory_search
                      │ + ext/*   │
@@ -73,7 +73,7 @@ See `docs/decisions/001-telegram-polling.md` and `docs/decisions/003-extension-i
 - `write`
 - `edit`
 - `bash`
-- `mcp_call`
+- `tool_call`
 - `memory_save`
 - `memory_search`
 
@@ -93,6 +93,8 @@ workspace/extensions/
 - Tools expose `async def run(...)`.
 - Channels expose `connect/recv/send`.
 - Extensions are hot-reloaded.
+- Tool names under `extensions/tools/` may not start with reserved prefix `MCP__`.
+- Runtime rejects extension tools using reserved prefixes to prevent namespace collisions.
 
 See `docs/decisions/003-extension-interface.md` and `docs/decisions/005-autonomy-boundary.md`.
 
@@ -124,6 +126,8 @@ Calls external MCP tools (stdio or HTTP). MCP server definitions come from exter
 - Config is runtime-owned and not agent-autonomous state.
 - Model/provider configuration is also loaded from this external config.
 - API secrets are loaded from `.env`/environment variables referenced by config.
+- MCP tools are exposed in runtime tool namespace as `MCP__<server>__<tool>`.
+- Unified `tool_call(name, args)` routes to either extension tools or MCP tools.
 
 **9. Model runtime**
 

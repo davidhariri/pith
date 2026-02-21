@@ -42,6 +42,7 @@ async def _fetch(url: str) -> str:
 - **Description** = docstring of `run`
 - **Parameter schema** = type hints of `run`
 - **Helpers** = underscore-prefixed, ignored by loader
+- **Reserved prefix** = extension tool names may not start with `MCP__`
 
 ### Channels
 
@@ -85,6 +86,7 @@ class Message:
 - Watch `workspace/extensions/` for changes
 - On change, reimport the module
 - For tools: grab `run`, error if missing
+- For tools: fail registration if tool name starts with reserved prefix `MCP__`
 - For channels: grab `connect`, `recv`, `send`, error if any are missing
 - Hot-reload: reimport module, re-register
 

@@ -12,6 +12,8 @@
 - [ ] Persona layer: `SOUL.md` is always injected and remains agent-editable.
 - [ ] Continuity: memory and session history are both persisted in SQLite and survive restart.
 - [ ] Memory tools: `memory_save` and `memory_search` operate directly on DB tables; search returns full matched entries.
+- [ ] Unified tool API: runtime exposes `tool_call(name, args)` for both extension tools and MCP tools.
+- [ ] Namespace safety: MCP tools are registered as `MCP__<server>__<tool>` and extension tools with `MCP__` prefix are rejected.
 - [ ] Extension loop: extension files in `workspace/extensions/tools/` hot-reload without process restart.
 - [ ] Self-growth demo: agent can create a new extension tool and call it successfully in a later turn.
 - [ ] Docker: repository includes a working `Dockerfile` and documented run command.
