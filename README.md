@@ -10,6 +10,14 @@ See [SPEC.md](SPEC.md) for full design.
 ./scripts/install.sh
 ```
 
+If you want `install.sh` to behave like a normal command anywhere on PATH:
+
+```bash
+chmod +x scripts/install.sh
+ln -s "$(pwd)/scripts/install.sh" ~/.local/bin/pith-install
+pith-install
+```
+
 `pith setup` writes starter config in `~/.config/pith/config.yaml` and workspace `.env` template.
 
 ## Commands
