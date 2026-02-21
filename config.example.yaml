@@ -20,7 +20,6 @@ telegram:
   bot_token_env: TELEGRAM_BOT_TOKEN
 
 mcp:
-  tool_prefix: MCP__
   servers:
     filesystem:
       transport: stdio
