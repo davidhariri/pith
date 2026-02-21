@@ -40,6 +40,8 @@ Telegram ─┐
 - `edit` — edit a file (string replacement)
 - `bash` — run a shell command (inside the container)
 - `mcp_call` — call a tool on a connected MCP server
+- `memory_save` — store a memory with optional tags
+- `memory_search` — search memories by keyword
 
 **4. Extensions** — Python modules the agent writes and the system hot-reloads. An extension can:
 - Register new tools
@@ -48,7 +50,7 @@ Telegram ─┐
 
 Extensions live in a known directory (e.g. `workspace/extensions/`). The system watches this directory and reloads on change. No registry, no manifest — drop a `.py` file, it gets loaded.
 
-**5. Memory** — SQLite database for conversation history and agent knowledge. Simple key-value + full-text search. No vector embeddings in v1 — start with FTS5 and see if it's sufficient.
+**5. Memory** — SQLite database for conversation history and agent knowledge. FTS5 for full-text search. On each incoming message, the system auto-queries for relevant memories and injects top-N results into context. The agent can also explicitly save and search memories via tools. No vector embeddings in v1. See [docs/decisions/002-system-prompt.md](docs/decisions/002-system-prompt.md).
 
 **6. MCP client** — Connects to configured MCP servers (stdio or HTTP transport). Exposes their tools to the agent via `mcp_call`. Configuration is a simple dict of server name → command/args.
 
@@ -74,7 +76,7 @@ Extensions live in a known directory (e.g. `workspace/extensions/`). The system 
 
 ## Open questions
 
-- Webhook vs polling for Telegram? Webhook is cleaner but needs a public URL (or ngrok for dev).
-- How should the agent's system prompt be managed? File on disk that the agent can edit?
+- ~~Webhook vs polling for Telegram?~~ Resolved: long-polling default, webhook opt-in. See [docs/decisions/001-telegram-polling.md](docs/decisions/001-telegram-polling.md).
+- ~~How should the agent's system prompt be managed?~~ Resolved: fixed prompt in code, memories in SQLite searched per-turn, workspace files readable on demand. See [docs/decisions/002-system-prompt.md](docs/decisions/002-system-prompt.md).
 - Should extensions have an explicit interface (e.g. `register()` function) or be fully convention-based (e.g. top-level `TOOLS = [...]`)?
 - Container runtime: Docker only, or also support Apple Containers / Podman?
