@@ -8,3 +8,5 @@ __pycache__/
 .env
 *.log
 PLAN.md
+.pith/
+events.jsonl

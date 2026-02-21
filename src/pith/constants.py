@@ -1,0 +1,22 @@
+"""Global constants for pith."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+from .config import ModelConfig
+
+DEFAULT_MODEL_CONFIG = ModelConfig()
+DEFAULT_CONFIG_DIR = Path.home() / ".config" / "pith"
+DEFAULT_CONFIG_PATH = DEFAULT_CONFIG_DIR / "config.yaml"
+DEFAULT_MCP_PREFIX = "MCP__"
+RESERVED_TOOL_PREFIX = DEFAULT_MCP_PREFIX
+SOUL_FILE = "SOUL.md"
+
+DEFAULT_MAX_MESSAGES = 20
+DEFAULT_MEMORY_TOP_N = 8
+DEFAULT_COMPACT_KEEP = 50
+DEFAULT_MAX_TOOL_OUTPUT_CHARS = 8_000
+DEFAULT_TOOL_TIMEOUT_SECONDS = 60
+
+OBS_LOG_FILENAME = "events.jsonl"
