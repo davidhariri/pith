@@ -17,6 +17,48 @@ A minimal, self-extending personal AI agent. Async Python, Docker-contained.
 - **Elegance:** Keep fewer moving parts and fewer lines than OpenClaw-style stacks.
 - **Deterministic onboarding:** Bootstrap mode is runtime-controlled, not file-deletion-driven.
 
+## Success Requirements (Definition of Done)
+
+`pith` is considered done for v1 when all of the following are true:
+
+1. Startup and config
+- Runtime starts with external `config.yaml` plus `.env` secrets.
+- Missing required config keys fail fast with clear errors.
+
+2. End-to-end chat loop
+- Telegram long-polling receives a user message and returns a model response.
+- Tool-calling works in-loop through `pydantic-ai`.
+
+3. Bootstrap and profile state
+- If required profile fields are missing, runtime enters bootstrap prompt mode.
+- Runtime sets `bootstrap_complete=true` only after validating required profile fields in SQLite.
+
+4. Persona and context assembly
+- `SOUL.md` is always injected in every turn.
+- Turn context includes profile summary, retrieved memory entries, recent history, and new message.
+
+5. DB-native continuity
+- Session history is persisted in SQLite and survives restarts.
+- `memory_save` writes memory rows to SQLite.
+- `memory_search` returns full matched rows via FTS5 with metadata.
+
+6. Self-extension loop
+- Adding or editing a file under `workspace/extensions/tools/` hot-reloads without process restart.
+- Agent can create a new extension tool and successfully use it in a later turn.
+
+7. Safety boundaries
+- Workspace is writable, but runtime config mount is read-only.
+- No host filesystem access beyond mounted paths.
+- No Docker socket mount.
+
+8. Observability
+- JSONL audit logs include turns, tool calls, memory retrieval, profile updates, and extension reload outcomes.
+- Failures are logged with enough metadata to debug without re-running blindly.
+
+9. Simplicity bar
+- Core runtime stays framework-light (`pydantic-ai`, `uvicorn`, `aiosqlite`, stdlib).
+- Core code (excluding docs/tests/examples/extensions) remains small enough to audit quickly in one sitting.
+
 ## Architecture
 
 ```
