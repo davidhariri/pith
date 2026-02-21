@@ -1,18 +1,26 @@
 # pith
 
-A minimal, self-extending personal AI agent. Async Python, runs in a container.
+A minimal, self-extending personal AI agent. Async Python, Docker-contained.
 
 ## Philosophy
 
-- **Small core, agent-grown capabilities.** The system ships with the minimum needed to think, remember, and communicate. New capabilities are written by the agent itself at runtime and hot-reloaded.
-- **Auditable.** A human should be able to read the entire core in one sitting.
-- **Container-isolated.** The agent process runs inside a container. It can only affect the outside world through explicitly mounted paths and exposed channels.
+- **Small core, agent-grown capabilities.** The system ships with the minimum needed to think, remember, communicate, and extend itself.
+- **Auditable.** A human should be able to read the whole core quickly.
+- **Container-first safety boundary.** The container is the primary sandbox.
+- **File-first memory.** Durable memory is human-readable markdown, with an index for fast recall.
+
+## Design Targets
+
+- **Power:** Agent can self-create and self-edit extensions at runtime.
+- **Safety:** Agent has broad freedom inside the container, but no access outside mounted boundaries.
+- **Elegance:** Keep fewer moving parts and fewer lines than OpenClaw-style stacks.
+- **Deterministic onboarding:** Bootstrap mode is runtime-controlled, not file-deletion-driven.
 
 ## Architecture
 
 ```
 Telegram (core) ──┐
-                   ├─→ Agent Loop ─→ Model API
+                   ├─→ Agent Loop ─→ Model Adapter
 ext/channels/* ───┘        ↓
                      ┌───────────┐
                      │ Tools     │
@@ -21,71 +29,145 @@ ext/channels/* ───┘        ↓
                      │ - edit    │
                      │ - bash    │
                      │ - mcp_call│
-                     │ - memory_*│
+                     │ - memory_save
+                     │ - memory_search
+                     │ - memory_get
                      │ + ext/*   │
                      └───────────┘
-                           ↓
-                     Memory (SQLite + FTS5)
+                          ↓
+     SOUL.md + profiles (SQLite) + MEMORY.md/logs + SQLite FTS5 index
 ```
 
-### Components
+## Components
 
-**1. Agent runtime** — The core loop. Receives a message, builds context (conversation history + memory), calls a model, executes tool calls, returns a response. Async Python using `httpx` for model calls. No framework — just a loop.
+**1. Agent runtime**
 
-**2. Channels** — Messaging platform adapters. Each channel is a Python module with three functions: `connect()`, `recv()`, `send()`. Telegram is built into the core (can't be broken by the agent). The agent can write additional channels as extensions. See [docs/decisions/003-extension-interface.md](docs/decisions/003-extension-interface.md).
+Receives messages, assembles context, calls model, executes tool calls, replies. Async Python with `httpx`. No web framework.
 
-**3. Tools** — The agent's hands. Minimal built-in set inspired by Pi:
-- `read` — read a file
-- `write` — write a file
-- `edit` — edit a file (string replacement)
-- `bash` — run a shell command (inside the container)
-- `mcp_call` — call a tool on a connected MCP server
-- `memory_save` — store a memory with optional tags
-- `memory_search` — search memories by keyword
+**2. Prompt and bootstrap state machine**
 
-**4. Extensions** — Python files the agent writes and the system hot-reloads. The file system is the registry:
+Prompt mode is selected by core runtime state in SQLite:
+
+- **Bootstrap mode** when required profile fields are missing.
+- **Normal mode** when bootstrap is complete.
+
+Bootstrap completion is set by runtime validation, not by asking the agent to delete a file.
+
+See `docs/decisions/011-bootstrap-profile-state.md`.
+
+**3. Channels**
+
+- Core channel: Telegram.
+- Extension channels follow `connect()`, `recv()`, `send()`.
+- Telegram remains in core so extension bugs cannot sever the primary control path.
+
+See `docs/decisions/001-telegram-polling.md` and `docs/decisions/003-extension-interface.md`.
+
+**4. Built-in tools**
+
+- `read`
+- `write`
+- `edit`
+- `bash`
+- `mcp_call`
+- `memory_save`
+- `memory_search`
+- `memory_get`
+
+Tool surface stays intentionally small. Growth comes from agent-authored extension tools.
+
+**5. Extension system (self-growth)**
+
+File system is the registry:
 
 ```
 workspace/extensions/
-├── tools/              # each .py file = one tool
-│   └── get_weather.py  #   async def run(city: str) -> str
-└── channels/           # each .py file = one channel
-    └── slack.py        #   connect(), recv(), send()
+├── tools/
+└── channels/
 ```
 
-**Tools** define `async def run(...)`. Tool name = filename, description = `run`'s docstring, schema = `run`'s type hints.
+- One file = one extension unit.
+- Tools expose `async def run(...)`.
+- Channels expose `connect/recv/send`.
+- Extensions are hot-reloaded.
 
-**Channels** define three functions: `async def connect()`, `async def recv() -> Message`, `async def send(message: Message)`. The core wires them into the agent loop.
+See `docs/decisions/003-extension-interface.md` and `docs/decisions/005-autonomy-boundary.md`.
 
-No imports from pith needed (except `Message` type for channels). No hooks — the agent handles its own reasoning. See [docs/decisions/003-extension-interface.md](docs/decisions/003-extension-interface.md).
+**6. Memory system**
 
-**5. Memory** — SQLite database for conversation history and agent knowledge. FTS5 for full-text search. On each incoming message, the system auto-queries for relevant memories and injects top-N results into context. The agent can also explicitly save and search memories via tools. No vector embeddings in v1. See [docs/decisions/002-system-prompt.md](docs/decisions/002-system-prompt.md).
+Canonical memory is file-first:
 
-**6. MCP client** — Connects to configured MCP servers (stdio or HTTP transport). Exposes their tools to the agent via `mcp_call`. Configuration is a simple dict of server name → command/args.
+- `MEMORY.md`: curated long-term memory and durable project/user facts.
+- `logs/YYYY-MM-DD.md`: daily episodic notes and turn-level learning.
 
-**7. Container** — The agent process runs inside a Docker container. The container gets:
-- Mounted workspace directory (extensions, memory db, agent-written files)
-- Network access (for model API calls, Telegram API, MCP HTTP servers)
-- No access to host filesystem beyond the workspace mount
+SQLite FTS5 stores a retrieval index over those files.
+
+- On startup and memory-file changes, index sync runs.
+- Per turn, top ranked chunks are injected into context.
+- Results include source metadata for auditability.
+
+See `docs/decisions/002-system-prompt.md`, `docs/decisions/006-memory-lifecycle-recall.md`, and `docs/decisions/007-session-compaction.md`.
+
+**7. Identity and persona model**
+
+- `SOUL.md` is always injected and remains agent-editable.
+- Agent identity and user identity are stored in runtime-managed SQLite profile tables.
+- Profile records are writable during bootstrap, then guarded and updated only on explicit user direction.
+
+See `docs/decisions/011-bootstrap-profile-state.md` and `docs/decisions/005-autonomy-boundary.md`.
+
+**8. MCP client**
+
+Calls external MCP tools (stdio or HTTP). Configured as a simple mapping from server name to launch/connection config.
+
+**9. Model adapter**
+
+Provider-agnostic interface with one canonical internal message/tool schema.
+
+- Start with OpenAI-compatible tool-calling.
+- Add adapters only when needed.
+
+See `docs/decisions/010-model-adapter.md`.
+
+**10. Container boundary**
+
+Docker only. The agent runs with broad in-container freedom, constrained by mount and container isolation.
+
+- Workspace mount read/write.
+- No host FS access beyond mounted workspace.
+- No Docker socket mount.
+
+See `docs/decisions/004-container-runtime.md` and `docs/decisions/008-tool-execution-safety.md`.
+
+**11. Observability**
+
+Minimal structured audit trail:
+
+- Append-only JSONL events for turns, tool calls, memory retrieval, profile updates, and extension reload failures.
+- Keep logs local and simple.
+
+See `docs/decisions/009-observability.md`.
 
 ## Runtime
 
-- **Python 3.12+**, async throughout
-- **uvicorn** — HTTP server for webhooks (Telegram webhook mode)
-- **httpx** — async HTTP client for model API calls
-- **aiosqlite** — async SQLite for memory
-- No web framework (no FastAPI, no Flask). Raw ASGI app or just uvicorn with a simple router.
+- Python 3.12+
+- `uvicorn`
+- `httpx`
+- `aiosqlite`
+- No web framework
+
+## Context Assembly Per Turn
+
+1. Fixed system prompt (bootstrap or normal, selected by runtime state)
+2. `SOUL.md` (always injected)
+3. Agent/user profile summary from SQLite
+4. Relevant memory chunks from indexed `MEMORY.md` + `logs/*.md`
+5. Conversation history window
+6. New message
 
 ## What this is NOT
 
-- Not a multi-tenant platform. One agent, one owner.
-- Not a plugin marketplace. The agent writes its own extensions.
-- Not an MCP server. It's an MCP client that can call tools on other servers.
-- Not model-specific. Should work with any model that supports tool use (Claude, GPT, etc.) via a simple adapter.
-
-## Open questions
-
-- ~~Webhook vs polling for Telegram?~~ Resolved: long-polling default, webhook opt-in. See [docs/decisions/001-telegram-polling.md](docs/decisions/001-telegram-polling.md).
-- ~~How should the agent's system prompt be managed?~~ Resolved: fixed prompt in code, memories in SQLite searched per-turn, workspace files readable on demand. See [docs/decisions/002-system-prompt.md](docs/decisions/002-system-prompt.md).
-- ~~Should extensions have an explicit interface?~~ Resolved: file-system-based, `async def run(...)` convention. See [docs/decisions/003-extension-interface.md](docs/decisions/003-extension-interface.md).
-- ~~Container runtime?~~ Resolved: Docker only. See [docs/decisions/004-container-runtime.md](docs/decisions/004-container-runtime.md).
+- Not multi-tenant.
+- Not a plugin marketplace.
+- Not an MCP server.
+- Not a heavy orchestration framework.
