@@ -11,28 +11,28 @@ A minimal, self-extending personal AI agent. Async Python, runs in a container.
 ## Architecture
 
 ```
-Telegram ─┐
-           ├─→ Channel Interface ─→ Agent (in container)
-(future) ──┘         ↑                  ↓
-                     │            ┌─────────────┐
-                     │            │  Tools       │
-                     │            │  - read      │
-                     │            │  - write     │
-                     │            │  - edit      │
-                     │            │  - bash      │
-                     │            │  - mcp_call  │
-                     │            └─────────────┘
-                     │                  ↓
-                     │            Extensions (hot-reloaded)
-                     │                  ↓
-                     └─── Memory (SQLite) ──→ disk
+Telegram (core) ──┐
+                   ├─→ Agent Loop ─→ Model API
+ext/channels/* ───┘        ↓
+                     ┌───────────┐
+                     │ Tools     │
+                     │ - read    │
+                     │ - write   │
+                     │ - edit    │
+                     │ - bash    │
+                     │ - mcp_call│
+                     │ - memory_*│
+                     │ + ext/*   │
+                     └───────────┘
+                           ↓
+                     Memory (SQLite + FTS5)
 ```
 
 ### Components
 
 **1. Agent runtime** — The core loop. Receives a message, builds context (conversation history + memory), calls a model, executes tool calls, returns a response. Async Python using `httpx` for model calls. No framework — just a loop.
 
-**2. Channel interface** — Abstract base for messaging platforms. A channel receives messages from the outside world and delivers agent responses back. First implementation: Telegram (via Bot API). Channels are async generators — they yield incoming messages and accept outgoing ones.
+**2. Channels** — Messaging platform adapters. Each channel is a Python module with three functions: `connect()`, `recv()`, `send()`. Telegram is built into the core (can't be broken by the agent). The agent can write additional channels as extensions. See [docs/decisions/003-extension-interface.md](docs/decisions/003-extension-interface.md).
 
 **3. Tools** — The agent's hands. Minimal built-in set inspired by Pi:
 - `read` — read a file
@@ -43,12 +43,21 @@ Telegram ─┐
 - `memory_save` — store a memory with optional tags
 - `memory_search` — search memories by keyword
 
-**4. Extensions** — Python modules the agent writes and the system hot-reloads. An extension can:
-- Register new tools
-- Register message hooks (pre/post processing)
-- Persist state to disk within the agent's workspace
+**4. Extensions** — Python files the agent writes and the system hot-reloads. The file system is the registry:
 
-Extensions live in a known directory (e.g. `workspace/extensions/`). The system watches this directory and reloads on change. No registry, no manifest — drop a `.py` file, it gets loaded.
+```
+workspace/extensions/
+├── tools/              # each .py file = one tool
+│   └── get_weather.py  #   async def run(city: str) -> str
+└── channels/           # each .py file = one channel
+    └── slack.py        #   connect(), recv(), send()
+```
+
+**Tools** define `async def run(...)`. Tool name = filename, description = `run`'s docstring, schema = `run`'s type hints.
+
+**Channels** define three functions: `async def connect()`, `async def recv() -> Message`, `async def send(message: Message)`. The core wires them into the agent loop.
+
+No imports from pith needed (except `Message` type for channels). No hooks — the agent handles its own reasoning. See [docs/decisions/003-extension-interface.md](docs/decisions/003-extension-interface.md).
 
 **5. Memory** — SQLite database for conversation history and agent knowledge. FTS5 for full-text search. On each incoming message, the system auto-queries for relevant memories and injects top-N results into context. The agent can also explicitly save and search memories via tools. No vector embeddings in v1. See [docs/decisions/002-system-prompt.md](docs/decisions/002-system-prompt.md).
 
@@ -78,5 +87,5 @@ Extensions live in a known directory (e.g. `workspace/extensions/`). The system 
 
 - ~~Webhook vs polling for Telegram?~~ Resolved: long-polling default, webhook opt-in. See [docs/decisions/001-telegram-polling.md](docs/decisions/001-telegram-polling.md).
 - ~~How should the agent's system prompt be managed?~~ Resolved: fixed prompt in code, memories in SQLite searched per-turn, workspace files readable on demand. See [docs/decisions/002-system-prompt.md](docs/decisions/002-system-prompt.md).
-- Should extensions have an explicit interface (e.g. `register()` function) or be fully convention-based (e.g. top-level `TOOLS = [...]`)?
-- Container runtime: Docker only, or also support Apple Containers / Podman?
+- ~~Should extensions have an explicit interface?~~ Resolved: file-system-based, `async def run(...)` convention. See [docs/decisions/003-extension-interface.md](docs/decisions/003-extension-interface.md).
+- ~~Container runtime?~~ Resolved: Docker only. See [docs/decisions/004-container-runtime.md](docs/decisions/004-container-runtime.md).
