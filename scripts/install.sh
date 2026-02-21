@@ -1,17 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
-if [[ -f "pyproject.toml" ]]; then
-  ROOT_DIR="$(pwd)"
-elif [[ -f "$SCRIPT_DIR/../pyproject.toml" ]]; then
-  ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-else
-  echo "Could not find repository root (pyproject.toml). Run from the project directory or from scripts/install.sh."
-  exit 1
-fi
-
+ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT_DIR"
 
 if ! command -v uv >/dev/null 2>&1; then
