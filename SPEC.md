@@ -8,6 +8,7 @@ A minimal, self-extending personal AI agent. Async Python, Docker-contained.
 - **Auditable.** A human should be able to read the whole core quickly.
 - **Container-first safety boundary.** The container is the primary sandbox.
 - **File-first memory.** Durable memory is human-readable markdown, with an index for fast recall.
+- **Split control planes.** Runtime/integration config lives outside workspace; agent memory and extensions live inside workspace.
 
 ## Design Targets
 
@@ -31,7 +32,6 @@ ext/channels/* ───┘        ↓
                      │ - mcp_call│
                      │ - memory_save
                      │ - memory_search
-                     │ - memory_get
                      │ + ext/*   │
                      └───────────┘
                           ↓
@@ -72,7 +72,6 @@ See `docs/decisions/001-telegram-polling.md` and `docs/decisions/003-extension-i
 - `mcp_call`
 - `memory_save`
 - `memory_search`
-- `memory_get`
 
 Tool surface stays intentionally small. Growth comes from agent-authored extension tools.
 
@@ -103,8 +102,8 @@ Canonical memory is file-first:
 SQLite FTS5 stores a retrieval index over those files.
 
 - On startup and memory-file changes, index sync runs.
-- Per turn, top ranked chunks are injected into context.
-- Results include source metadata for auditability.
+- Per turn, top ranked memory entries are injected into context.
+- `memory_search` returns full matched entries (with source metadata), not snippets.
 
 See `docs/decisions/002-system-prompt.md`, `docs/decisions/006-memory-lifecycle-recall.md`, and `docs/decisions/007-session-compaction.md`.
 
@@ -118,7 +117,11 @@ See `docs/decisions/011-bootstrap-profile-state.md` and `docs/decisions/005-auto
 
 **8. MCP client**
 
-Calls external MCP tools (stdio or HTTP). Configured as a simple mapping from server name to launch/connection config.
+Calls external MCP tools (stdio or HTTP). MCP server definitions come from external `config.yaml` outside workspace.
+
+- Runtime reads config from `PITH_CONFIG` or default host path `~/.config/pith/config.yaml`.
+- In Docker, this config is mounted read-only (for example `/run/pith/config.yaml`).
+- Config is runtime-owned and not agent-autonomous state.
 
 **9. Model adapter**
 
@@ -136,8 +139,9 @@ Docker only. The agent runs with broad in-container freedom, constrained by moun
 - Workspace mount read/write.
 - No host FS access beyond mounted workspace.
 - No Docker socket mount.
+- External runtime config is mounted read-only and outside workspace paths.
 
-See `docs/decisions/004-container-runtime.md` and `docs/decisions/008-tool-execution-safety.md`.
+See `docs/decisions/004-container-runtime.md`, `docs/decisions/008-tool-execution-safety.md`, and `docs/decisions/012-external-config.md`.
 
 **11. Observability**
 
@@ -161,7 +165,7 @@ See `docs/decisions/009-observability.md`.
 1. Fixed system prompt (bootstrap or normal, selected by runtime state)
 2. `SOUL.md` (always injected)
 3. Agent/user profile summary from SQLite
-4. Relevant memory chunks from indexed `MEMORY.md` + `logs/*.md`
+4. Relevant full memory entries from indexed `MEMORY.md` + `logs/*.md`
 5. Conversation history window
 6. New message
 

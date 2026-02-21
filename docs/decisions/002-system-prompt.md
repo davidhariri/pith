@@ -57,7 +57,7 @@ Runtime indexes memory files into SQLite FTS5.
 1. Fixed system prompt (bootstrap or normal)
 2. `SOUL.md`
 3. Profile summary (SQLite)
-4. Relevant memory chunks from index
+4. Relevant full memory entries from index
 5. Conversation history window
 6. New message
 

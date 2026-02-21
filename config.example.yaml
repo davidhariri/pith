@@ -1,0 +1,27 @@
+# Copy to ~/.config/pith/config.yaml (or set PITH_CONFIG to another path).
+# Keep this file outside the agent workspace; mount it read-only in Docker.
+
+version: 1
+
+runtime:
+  workspace_path: /workspace
+  memory_db_path: /workspace/memory.db
+
+telegram:
+  transport: polling
+  bot_token_env: TELEGRAM_BOT_TOKEN
+
+mcp:
+  servers:
+    filesystem:
+      transport: stdio
+      command: npx
+      args:
+        - -y
+        - "@modelcontextprotocol/server-filesystem"
+        - /workspace
+    github:
+      transport: http
+      url: http://host.docker.internal:8787/mcp
+      headers:
+        Authorization: "Bearer ${GITHUB_MCP_TOKEN}"

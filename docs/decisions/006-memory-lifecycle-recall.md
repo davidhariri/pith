@@ -26,7 +26,8 @@ Use file-first canonical memory with FTS5 retrieval and explicit lifecycle rules
 
 - Index `MEMORY.md` and `logs/*.md` into SQLite FTS5.
 - Retrieve with FTS ranking plus lightweight recency weighting by log date.
-- Inject top-N de-duplicated chunks per turn with source metadata.
+- `memory_search` returns full matched entries with source metadata.
+- Inject top-N de-duplicated full entries per turn.
 
 ## Rationale
 

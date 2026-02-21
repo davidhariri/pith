@@ -16,6 +16,7 @@ Container boundary is the primary safety mechanism. In-container tool execution 
 - `bash` and extension tools may run freely inside the container.
 - Host impact is limited by container isolation and workspace mount boundaries.
 - No Docker socket mount.
+- External runtime config mount is read-only.
 - Core runtime applies pragmatic safeguards:
   - per-tool timeout
   - retries/backoff for transient failures

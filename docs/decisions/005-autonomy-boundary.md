@@ -29,6 +29,7 @@ Guarded state includes:
 - core runtime/source/spec docs
 - `agent_profile` and `user_profile` runtime records
 - bootstrap completion state
+- external runtime config (`config.yaml` loaded outside workspace)
 
 Profile updates are allowed during bootstrap and otherwise require explicit user direction.
 
