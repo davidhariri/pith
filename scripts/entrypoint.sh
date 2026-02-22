@@ -4,6 +4,9 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
+RED="\033[0;31m"
+RESET="\033[0m"
+
 USAGE="Usage: $0 <run|risk>"
 MODE="${1:-}"
 
@@ -28,6 +31,13 @@ if [[ ! -f "$ENV_EXAMPLE" ]]; then
   exit 1
 fi
 
+fatal() {
+  printf "${RED}%s${RESET}\n" "$1"
+  shift
+  printf "%b\n" "$1"
+  exit 1
+}
+
 mkdir -p "$(dirname "$DEFAULT_CONFIG")"
 if [[ ! -f "$DEFAULT_CONFIG" ]]; then
   cp "$CONFIG_EXAMPLE" "$DEFAULT_CONFIG"
@@ -42,9 +52,11 @@ fi
 case "$MODE" in
   run)
     if ! command -v docker >/dev/null 2>&1; then
-      echo "Docker is required for 'make run'."
-      echo "Install Docker, or use 'make risk' to run without containerization."
-      exit 1
+      fatal "Docker is required for 'make run'." "Install Docker, or use 'make risk' to run without containerization."
+    fi
+
+    if ! docker info >/dev/null 2>&1; then
+      fatal "Docker daemon is unavailable." "Start Docker (or install it), then rerun 'make run'."
     fi
 
     if ! docker image inspect "$IMAGE_NAME" >/dev/null 2>&1; then
@@ -61,8 +73,7 @@ case "$MODE" in
     ;;
   risk)
     if ! command -v uv >/dev/null 2>&1; then
-      echo "uv is required for 'make risk'. Install uv and retry."
-      exit 1
+      fatal "uv is required for 'make risk'." "Install uv (https://docs.astral.sh/uv/), then rerun 'make risk'."
     fi
 
     cd "$ROOT_DIR"
