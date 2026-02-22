@@ -55,7 +55,7 @@ def _is_interactive() -> bool:
 # -- Configuration bootstrap --
 
 
-def _ensure_configured() -> None:
+async def _ensure_configured() -> None:
     """Ensure config.yaml exists and API key is set. Prompt interactively if needed."""
     config_path = Path(os.environ.get("PITH_CONFIG", str(default_config_path())))
     env_path = Path.cwd() / ".env"
@@ -66,7 +66,7 @@ def _ensure_configured() -> None:
                 f"config not found at {config_path}\n"
                 "run `pith setup` interactively first"
             )
-        _run_setup(config_path, env_path)
+        await _run_setup(config_path, env_path)
         return
 
     # Config exists — check API key
@@ -84,7 +84,7 @@ def _ensure_configured() -> None:
         )
 
     # Config exists but key is missing — run full setup
-    _run_setup(config_path, env_path)
+    await _run_setup(config_path, env_path)
 
 
 def _set_env_value(env_path: Path, key: str, value: str) -> None:
@@ -106,7 +106,7 @@ def _set_env_value(env_path: Path, key: str, value: str) -> None:
     env_path.write_text("\n".join(lines), encoding="utf-8")
 
 
-def _run_setup(config_path: Path, env_path: Path) -> None:
+async def _run_setup(config_path: Path, env_path: Path) -> None:
     """Interactive setup flow — creates config.yaml and .env."""
     workspace = Path.cwd()
 
@@ -116,19 +116,19 @@ def _run_setup(config_path: Path, env_path: Path) -> None:
     provider_choices = [
         questionary.Choice(title=v["label"], value=k) for k, v in _PROVIDER_PRESETS.items()
     ]
-    provider = questionary.select("Model provider:", choices=provider_choices).ask()
+    provider = await questionary.select("Model provider:", choices=provider_choices).ask_async()
     if provider is None:
         raise SystemExit("setup cancelled")
     preset = _PROVIDER_PRESETS[provider]
 
     # Model name
-    model_name = questionary.text("Model name:", default=preset["model"]).ask()
+    model_name = await questionary.text("Model name:", default=preset["model"]).ask_async()
     if model_name is None:
         raise SystemExit("setup cancelled")
 
     # API key
     api_key_env = preset["api_key_env"]
-    api_key_value = questionary.password(f"API key ({api_key_env}):").ask()
+    api_key_value = await questionary.password(f"API key ({api_key_env}):").ask_async()
     if not api_key_value:
         raise SystemExit("API key is required to run pith")
 
@@ -167,13 +167,13 @@ def _run_setup(config_path: Path, env_path: Path) -> None:
 async def cmd_setup(_: argparse.Namespace) -> None:
     config_path = Path(os.environ.get("PITH_CONFIG", str(default_config_path()))).expanduser()
     env_path = Path.cwd() / ".env"
-    _run_setup(config_path, env_path)
+    await _run_setup(config_path, env_path)
 
 
 async def cmd_run(_: argparse.Namespace) -> None:
     from .channels.telegram import run_telegram
 
-    _ensure_configured()
+    await _ensure_configured()
     runtime = _load_runtime()
     async with runtime.storage:
         await runtime.initialize()
@@ -185,13 +185,13 @@ async def cmd_run(_: argparse.Namespace) -> None:
 
         token_env = runtime.cfg.telegram.bot_token_env
         if os.environ.get(token_env):
-            console.print("[green]\[startup ok][/green] pith service started successfully")
+            console.print("[green]\\[startup ok][/green] pith service started successfully")
             console.print("transport: telegram enabled")
             console.print("status: service loop active")
             await run_telegram(runtime)
             return
 
-        console.print("[green]\[startup ok][/green] pith service started successfully")
+        console.print("[green]\\[startup ok][/green] pith service started successfully")
         console.print("transport: telegram disabled (optional)")
         console.print(f"next step (optional): set {token_env} in .env to enable Telegram")
         console.print("local chat: run `pith chat` in another terminal")
@@ -200,7 +200,7 @@ async def cmd_run(_: argparse.Namespace) -> None:
 
 
 async def cmd_chat(_: argparse.Namespace) -> None:
-    _ensure_configured()
+    await _ensure_configured()
     runtime = _load_runtime()
     async with runtime.storage:
         await runtime.initialize()
