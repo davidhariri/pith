@@ -5,6 +5,7 @@ from __future__ import annotations
 import sys
 
 from prompt_toolkit import PromptSession
+from prompt_toolkit.completion import WordCompleter
 from prompt_toolkit.history import FileHistory
 from prompt_toolkit.styles import Style
 from rich.console import Console
@@ -15,7 +16,14 @@ console = Console()
 
 _style = Style.from_dict({
     "placeholder": "gray italic",
+    "completion-menu": "bg:default default",
+    "completion-menu.completion.current": "bold",
 })
+
+_slash_completer = WordCompleter(
+    ["/quit", "/new", "/compact", "/info"],
+    sentence=True,
+)
 
 
 async def _send(runtime: Runtime, message: str, session_id: str) -> bool:
@@ -54,6 +62,8 @@ async def run_chat(runtime: Runtime) -> None:
     session: PromptSession[str] = PromptSession(
         history=FileHistory(str(history_path)),
         placeholder=[("class:placeholder", "say something...")],
+        completer=_slash_completer,
+        complete_while_typing=True,
     )
 
     bootstrap_complete = await runtime.storage.get_bootstrap_state()
