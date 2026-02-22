@@ -12,7 +12,6 @@ import questionary
 import yaml
 from rich.console import Console
 
-from .chat import run_chat
 from .config import ConfigLoadResult, default_config_path, load_config
 from .extensions import ExtensionRegistry
 from .mcp_client import MCPClient
@@ -202,6 +201,7 @@ async def cmd_setup(_: argparse.Namespace) -> None:
 
 
 async def cmd_run(_: argparse.Namespace) -> None:
+    from .channels.chat import run_chat
     from .channels.telegram import run_telegram
 
     await _ensure_configured()
@@ -215,18 +215,28 @@ async def cmd_run(_: argparse.Namespace) -> None:
         (pith_dir / "healthy").touch()
         (pith_dir / "pid").write_text(str(os.getpid()), encoding="utf-8")
 
+        transports = []
+
         token_env = runtime.cfg.telegram.bot_token_env
-        if not os.environ.get(token_env):
-            console.print("[yellow]no transport configured[/yellow]")
-            console.print(f"  set {token_env} in .env to enable Telegram")
-            console.print("  or use `pith chat` for local conversation")
+        if os.environ.get(token_env):
+            console.print("[green]✓[/green] telegram")
+            transports.append(run_telegram(runtime))
+
+        if _is_interactive():
+            transports.append(run_chat(runtime))
+
+        if not transports:
+            console.print("[yellow]no transport available[/yellow]")
+            console.print(f"  set {token_env} in .env for Telegram")
+            console.print("  or run interactively for chat")
             return
 
-        console.print("[green]\\[startup ok][/green] pith service started (telegram)")
-        await run_telegram(runtime)
+        await asyncio.gather(*transports)
 
 
 async def cmd_chat(_: argparse.Namespace) -> None:
+    from .channels.chat import run_chat
+
     await _ensure_configured()
     runtime = _load_runtime()
     async with runtime.storage:

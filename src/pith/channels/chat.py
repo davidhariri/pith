@@ -9,7 +9,7 @@ from prompt_toolkit.formatted_text import ANSI
 from prompt_toolkit.history import FileHistory
 from rich.console import Console
 
-from .runtime import Runtime
+from ..runtime import Runtime
 
 console = Console()
 
