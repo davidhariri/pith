@@ -34,16 +34,36 @@ def _load_runtime() -> Runtime:
 
 # -- Interactive helpers --
 
-_PROVIDER_PRESETS: dict[str, dict[str, str]] = {
+_PROVIDER_PRESETS: dict[str, dict] = {
     "anthropic": {
         "label": "Anthropic",
-        "model": "claude-sonnet-4-20250514",
         "api_key_env": "ANTHROPIC_API_KEY",
+        "models": [
+            ("claude-sonnet-4-6", "Claude Sonnet 4.6"),
+            ("claude-opus-4-6", "Claude Opus 4.6"),
+            ("claude-sonnet-4-5", "Claude Sonnet 4.5"),
+            ("claude-opus-4-5", "Claude Opus 4.5"),
+            ("claude-haiku-4-5", "Claude Haiku 4.5"),
+        ],
     },
     "openai": {
         "label": "OpenAI",
-        "model": "gpt-4o",
         "api_key_env": "OPENAI_API_KEY",
+        "models": [
+            ("gpt-5", "GPT-5"),
+            ("gpt-5.2", "GPT-5.2"),
+            ("gpt-5.1", "GPT-5.1"),
+            ("gpt-5-mini", "GPT-5 mini"),
+            ("gpt-5-nano", "GPT-5 nano"),
+            ("o3", "o3"),
+            ("o4-mini", "o4-mini"),
+            ("o1", "o1"),
+            ("gpt-4.1", "GPT-4.1"),
+            ("gpt-4.1-mini", "GPT-4.1 mini"),
+            ("gpt-4.1-nano", "GPT-4.1 nano"),
+            ("gpt-4o", "GPT-4o"),
+            ("gpt-4o-mini", "GPT-4o mini"),
+        ],
     },
 }
 
@@ -121,8 +141,12 @@ async def _run_setup(config_path: Path, env_path: Path) -> None:
         raise SystemExit("setup cancelled")
     preset = _PROVIDER_PRESETS[provider]
 
-    # Model name
-    model_name = await questionary.text("Model name:", default=preset["model"]).ask_async()
+    # Model selection
+    model_choices = [
+        questionary.Choice(title=label, value=model_id)
+        for model_id, label in preset["models"]
+    ]
+    model_name = await questionary.select("Model:", choices=model_choices).ask_async()
     if model_name is None:
         raise SystemExit("setup cancelled")
 
