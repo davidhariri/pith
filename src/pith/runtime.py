@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import textwrap
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -84,33 +85,73 @@ class Runtime:
         async def build_system_prompt() -> str:
             parts: list[str] = []
 
-            # Fixed instructions
-            if bootstrap:
-                parts.append(
-                    "You are pith. You have not finished bootstrap mode.\n"
-                    "Before normal operation, collect agent and user profile fields.\n"
-                    "Required agent fields: name, nature.\n"
-                    "Required user fields: name.\n"
-                    "Use the set_profile tool to persist each field.\n"
-                    "Stay terse and safe."
-                )
-            else:
-                parts.append(
-                    "You are pith, a compact assistant that can reason and use tools.\n"
-                    "Use tools for file, shell, and memory operations.\n"
-                    "Keep responses actionable and concise.\n"
-                    "Never fabricate tool outputs."
-                )
-
-            # SOUL.md
-            soul = runtime._read_soul()
-            if soul:
-                parts.append(f"# SOUL\n{soul}")
-
-            # Profiles
             profiles = await runtime.storage.all_profile_fields()
             agent_profile = profiles.get("agent", {})
             user_profile = profiles.get("user", {})
+
+            if bootstrap:
+                parts.append(textwrap.dedent("""\
+                    You are pith — a new personal AI agent, \
+                    just coming online for the first time.
+
+                    Your job right now is to get to know your \
+                    owner and figure out who you are together. \
+                    This is a conversation, not an interrogation. \
+                    Be warm, curious, and natural.
+
+                    Discover these things one at a time \
+                    (don't ask all at once):
+                    - Agent name: What should they call you? \
+                    (pith is the default, but they can pick anything)
+                    - Agent nature: What kind of entity are you? \
+                    (AI assistant is fine, but something more \
+                    personal is encouraged)
+                    - User name: What's their name?
+
+                    Use the set_profile tool to save each field \
+                    as you learn it \
+                    (profile_type='agent'/'user', \
+                    key='name'/'nature').
+
+                    When you've collected all three, use the \
+                    write tool to create a SOUL.md file that \
+                    captures the vibe of the conversation — \
+                    this becomes your personality going forward. \
+                    Then tell them you're ready.
+
+                    Start by introducing yourself and asking \
+                    who they are."""))
+            else:
+                agent_name = agent_profile.get("name", "pith")
+                soul = runtime._read_soul()
+
+                identity = (
+                    f"You are {agent_name}, "
+                    "a personal AI agent."
+                )
+                if user_profile.get("name"):
+                    identity += (
+                        f" Your user is {user_profile['name']}."
+                    )
+                parts.append(identity)
+
+                if soul:
+                    parts.append(soul)
+
+                parts.append(textwrap.dedent("""\
+                    ## Guidelines
+                    - Be conversational and natural. \
+                    You're a thinking partner, not a \
+                    command executor.
+                    - Use tools when needed for file, \
+                    shell, and memory operations.
+                    - Never fabricate tool outputs.
+                    - When a conversation starts, greet \
+                    your user warmly and naturally.
+                    - Keep responses concise but not \
+                    robotic."""))
+
+            # Profiles (show remaining fields not already used in identity)
             if agent_profile or user_profile:
                 profile_lines = ["# Profiles"]
                 if agent_profile:

@@ -95,8 +95,12 @@ async def _send(runtime: Runtime, message: str, session_id: str) -> bool:
 
 async def _greet(runtime: Runtime, session_id: str) -> None:
     """Send an opening signal so the LLM greets the user."""
+    bootstrap = not await runtime.storage.get_bootstrap_state()
     console.print()
-    await _send(runtime, "[start]", session_id)
+    if bootstrap:
+        await _send(runtime, "Hello — I just started pith for the first time.", session_id)
+    else:
+        await _send(runtime, "[new conversation]", session_id)
 
 
 async def run_chat(runtime: Runtime) -> None:
