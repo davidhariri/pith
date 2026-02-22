@@ -351,6 +351,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("setup", help="Interactive setup wizard")
     sub.add_parser("run", help="Run service loop (telegram optional)")
+    sub.add_parser("start", help="Alias for run")
     sub.add_parser("chat", help="Interactive streaming terminal chat")
     sub.add_parser("status", help="Check if the service is running")
     sub.add_parser("stop", help="Stop the running service")
@@ -370,7 +371,7 @@ async def run() -> None:
 
     if args.command == "setup":
         await cmd_setup(args)
-    elif args.command == "run":
+    elif args.command in ("run", "start"):
         await cmd_run(args)
     elif args.command == "chat":
         await cmd_chat(args)
