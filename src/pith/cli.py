@@ -201,7 +201,6 @@ async def cmd_setup(_: argparse.Namespace) -> None:
 
 
 async def cmd_run(_: argparse.Namespace) -> None:
-    from .channels.chat import run_chat
     from .channels.telegram import run_telegram
 
     await _ensure_configured()
@@ -223,12 +222,14 @@ async def cmd_run(_: argparse.Namespace) -> None:
             transports.append(run_telegram(runtime))
 
         if _is_interactive():
-            transports.append(run_chat(runtime))
+            console.print("[green]✓[/green] cli")
 
         if not transports:
-            console.print("[yellow]no transport available[/yellow]")
-            console.print(f"  set {token_env} in .env for Telegram")
-            console.print("  or run interactively for chat")
+            if _is_interactive():
+                console.print("\n  run [bold]pith chat[/bold] to start talking")
+            else:
+                console.print("[yellow]no transport available[/yellow]")
+                console.print(f"  set {token_env} in .env for Telegram")
             return
 
         await asyncio.gather(*transports)
