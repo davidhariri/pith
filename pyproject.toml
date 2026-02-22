@@ -9,6 +9,8 @@ dependencies = [
   "httpx",
   "pydantic-ai",
   "prompt-toolkit",
+  "questionary",
+  "rich",
   "PyYAML",
 ]
 

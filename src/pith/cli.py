@@ -6,11 +6,11 @@ import argparse
 import asyncio
 import os
 import sys
-import termios
-import tty
 from pathlib import Path
 
+import questionary
 import yaml
+from rich.console import Console
 
 from .chat import run_chat
 from .config import ConfigLoadResult, default_config_path, load_config
@@ -18,6 +18,8 @@ from .extensions import ExtensionRegistry
 from .mcp_client import MCPClient
 from .runtime import Runtime
 from .storage import Storage
+
+console = Console()
 
 
 def _load_runtime() -> Runtime:
@@ -44,63 +46,6 @@ _PROVIDER_PRESETS: dict[str, dict[str, str]] = {
         "api_key_env": "OPENAI_API_KEY",
     },
 }
-
-
-def _select(prompt: str, options: list[tuple[str, str]], default: int = 0) -> str:
-    """Inline arrow-key selector. options = [(value, label), ...]. Returns value."""
-    fd = sys.stdin.fileno()
-    old_settings = termios.tcgetattr(fd)
-    selected = default
-
-    def render() -> None:
-        # Move cursor up to overwrite previous render (except first time)
-        for i, (_, label) in enumerate(options):
-            if i == selected:
-                sys.stdout.write(f"  \033[36m> {label}\033[0m\n")
-            else:
-                sys.stdout.write(f"    {label}\n")
-        sys.stdout.flush()
-
-    def clear() -> None:
-        for _ in options:
-            sys.stdout.write("\033[A\033[2K")
-        sys.stdout.flush()
-
-    sys.stdout.write(f"{prompt}\n")
-    render()
-
-    try:
-        tty.setraw(fd)
-        while True:
-            ch = sys.stdin.read(1)
-            if ch == "\r" or ch == "\n":
-                break
-            if ch == "\x03":  # ctrl-c
-                raise KeyboardInterrupt
-            if ch == "\x1b":
-                seq = sys.stdin.read(2)
-                if seq == "[A":  # up
-                    selected = (selected - 1) % len(options)
-                elif seq == "[B":  # down
-                    selected = (selected + 1) % len(options)
-                clear()
-                render()
-    finally:
-        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
-
-    # Clear the selector and show the choice inline
-    clear()
-    _, label = options[selected]
-    sys.stdout.write(f"\033[A\033[2K{prompt} \033[36m{label}\033[0m\n")
-    sys.stdout.flush()
-
-    return options[selected][0]
-
-
-def _ask(prompt: str, default: str = "") -> str:
-    suffix = f" \033[90m[{default}]\033[0m" if default else ""
-    value = input(f"{prompt}{suffix} ").strip()
-    return value or default
 
 
 def _is_interactive() -> bool:
@@ -165,19 +110,25 @@ def _run_setup(config_path: Path, env_path: Path) -> None:
     """Interactive setup flow — creates config.yaml and .env."""
     workspace = Path.cwd()
 
-    print("\n\033[1mpith setup\033[0m\n")
+    console.print("\n[bold]pith setup[/bold]\n")
 
     # Provider selection
-    provider_options = [(k, v["label"]) for k, v in _PROVIDER_PRESETS.items()]
-    provider = _select("Model provider:", provider_options)
+    provider_choices = [
+        questionary.Choice(title=v["label"], value=k) for k, v in _PROVIDER_PRESETS.items()
+    ]
+    provider = questionary.select("Model provider:", choices=provider_choices).ask()
+    if provider is None:
+        raise SystemExit("setup cancelled")
     preset = _PROVIDER_PRESETS[provider]
 
     # Model name
-    model_name = _ask("Model name:", preset["model"])
+    model_name = questionary.text("Model name:", default=preset["model"]).ask()
+    if model_name is None:
+        raise SystemExit("setup cancelled")
 
     # API key
     api_key_env = preset["api_key_env"]
-    api_key_value = _ask(f"API key ({api_key_env}):")
+    api_key_value = questionary.password(f"API key ({api_key_env}):").ask()
     if not api_key_value:
         raise SystemExit("API key is required to run pith")
 
@@ -206,8 +157,8 @@ def _run_setup(config_path: Path, env_path: Path) -> None:
     # Write .env
     env_path.write_text(f"{api_key_env}={api_key_value}\n", encoding="utf-8")
 
-    print(f"\n\033[32m✓\033[0m wrote {config_path}")
-    print(f"\033[32m✓\033[0m wrote {env_path}\n")
+    console.print(f"\n[green]✓[/green] wrote {config_path}")
+    console.print(f"[green]✓[/green] wrote {env_path}\n")
 
 
 # -- Commands --
@@ -234,17 +185,17 @@ async def cmd_run(_: argparse.Namespace) -> None:
 
         token_env = runtime.cfg.telegram.bot_token_env
         if os.environ.get(token_env):
-            print("\033[0;32m[startup ok]\033[0m pith service started successfully")
-            print("transport: telegram enabled")
-            print("status: service loop active")
+            console.print("[green]\[startup ok][/green] pith service started successfully")
+            console.print("transport: telegram enabled")
+            console.print("status: service loop active")
             await run_telegram(runtime)
             return
 
-        print("\033[0;32m[startup ok]\033[0m pith service started successfully")
-        print("transport: telegram disabled (optional)")
-        print(f"next step (optional): set {token_env} in .env to enable Telegram")
-        print("local chat: run `pith chat` in another terminal")
-        print("status: service loop active")
+        console.print("[green]\[startup ok][/green] pith service started successfully")
+        console.print("transport: telegram disabled (optional)")
+        console.print(f"next step (optional): set {token_env} in .env to enable Telegram")
+        console.print("local chat: run `pith chat` in another terminal")
+        console.print("status: service loop active")
         await asyncio.Event().wait()
 
 
@@ -260,19 +211,19 @@ async def cmd_doctor(_: argparse.Namespace) -> None:
     cfg_result = load_config()
     cfg = cfg_result.config
 
-    print(f"Config path: {cfg_result.path}")
-    print(f"Workspace: {cfg.runtime.workspace_path}")
-    print(f"DB: {cfg.runtime.memory_db_path}")
-    print(f"Log dir: {cfg.runtime.log_dir}")
-    print(f"Model: {cfg.model.provider}:{cfg.model.model}")
+    console.print(f"Config path: {cfg_result.path}")
+    console.print(f"Workspace: {cfg.runtime.workspace_path}")
+    console.print(f"DB: {cfg.runtime.memory_db_path}")
+    console.print(f"Log dir: {cfg.runtime.log_dir}")
+    console.print(f"Model: {cfg.model.provider}:{cfg.model.model}")
 
     api_key = os.environ.get(cfg.model.api_key_env)
-    print(f"Model key ({cfg.model.api_key_env}): {'set' if api_key else 'missing'}")
+    console.print(f"Model key ({cfg.model.api_key_env}): {'set' if api_key else 'missing'}")
 
     tg_key = os.environ.get(cfg.telegram.bot_token_env)
-    print(f"Telegram key ({cfg.telegram.bot_token_env}): {'set' if tg_key else 'missing'}")
+    console.print(f"Telegram key ({cfg.telegram.bot_token_env}): {'set' if tg_key else 'missing'}")
 
-    print(f"MCP servers: {', '.join(cfg.mcp_servers.keys()) or 'none'}")
+    console.print(f"MCP servers: {', '.join(cfg.mcp_servers.keys()) or 'none'}")
 
 
 async def cmd_logs_tail(_: argparse.Namespace) -> None:
@@ -282,7 +233,7 @@ async def cmd_logs_tail(_: argparse.Namespace) -> None:
 
     log_path = log_dir / "events.jsonl"
     if not log_path.exists():
-        print(f"no log file yet: {log_path}")
+        console.print(f"no log file yet: {log_path}")
         return
 
     with log_path.open("r", encoding="utf-8") as fp:
@@ -290,7 +241,7 @@ async def cmd_logs_tail(_: argparse.Namespace) -> None:
         while True:
             line = fp.readline()
             if line:
-                print(line.rstrip())
+                console.print(line.rstrip())
             else:
                 await asyncio.sleep(0.25)
 

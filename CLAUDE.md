@@ -14,6 +14,9 @@ Before adding anything — a function, a module, a dependency — read the full 
 - `uv` for environment and dependency management
 - `ruff` for linting and formatting
 - `pytest` + `pytest-asyncio` for tests
+- `rich` for all terminal output (never raw ANSI escape codes)
+- `questionary` for interactive prompts/selectors (never hand-rolled termios)
+- `prompt-toolkit` for async chat input with history
 
 ## Constraints
 

@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-import sys
-
 from prompt_toolkit import PromptSession
 from prompt_toolkit.history import FileHistory
+from rich.console import Console
 
 from .runtime import Runtime
+
+console = Console()
 
 
 async def run_chat(runtime: Runtime) -> None:
@@ -19,7 +20,7 @@ async def run_chat(runtime: Runtime) -> None:
         history=FileHistory(str(history_path)),
     )
 
-    print("pith chat (type /quit to exit)")
+    console.print("pith chat (type /quit to exit)")
 
     while True:
         try:
@@ -36,23 +37,22 @@ async def run_chat(runtime: Runtime) -> None:
             break
         if text == "/new":
             session_id = await runtime.new_session()
-            print(f"new session: {session_id}")
+            console.print(f"new session: {session_id}")
             continue
         if text == "/compact":
             result = await runtime.compact_session(session_id)
-            print(result)
+            console.print(result)
             continue
         if text == "/info":
             info = await runtime.get_info(session_id)
-            print(info)
+            console.print(info)
             continue
 
         def on_text(delta: str) -> None:
-            sys.stdout.write(delta)
-            sys.stdout.flush()
+            console.print(delta, end="", highlight=False)
 
         def on_tool(name: str) -> None:
-            print(f"\033[33m[tool] {name}\033[0m")
+            console.print(f"[yellow]\\[tool][/yellow] {name}")
 
         await runtime.chat(
             text,
@@ -61,4 +61,4 @@ async def run_chat(runtime: Runtime) -> None:
             on_tool=on_tool,
         )
         # Newline after streamed output
-        print()
+        console.print()
