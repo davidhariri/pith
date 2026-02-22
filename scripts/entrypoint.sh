@@ -21,6 +21,7 @@ ENV_EXAMPLE="$ROOT_DIR/.env.example"
 DEFAULT_CONFIG="${PITH_CONFIG:-$ROOT_DIR/config.yaml}"
 ENV_FILE="$ROOT_DIR/.env"
 IMAGE_NAME="${PITH_DOCKER_IMAGE:-pith:dev}"
+CONTAINER_NAME="${PITH_CONTAINER_NAME:-pith-dev}"
 
 if [[ ! -f "$CONFIG_EXAMPLE" ]]; then
   echo "Missing config template: $CONFIG_EXAMPLE"
@@ -116,10 +117,53 @@ case "$MODE" in
       fi
     fi
 
-    docker run --rm -it \
+    # Stop any existing container with the same name
+    if docker ps -q -f "name=$CONTAINER_NAME" 2>/dev/null | grep -q .; then
+      echo "Stopping existing container '$CONTAINER_NAME'..."
+      docker stop "$CONTAINER_NAME" >/dev/null 2>&1 || true
+    fi
+    docker rm "$CONTAINER_NAME" >/dev/null 2>&1 || true
+
+    echo "Starting container '$CONTAINER_NAME'..."
+    docker run -d --name "$CONTAINER_NAME" \
       -v "$ROOT_DIR:/workspace" \
       -w /workspace \
-      "$IMAGE_NAME"
+      "$IMAGE_NAME" >/dev/null
+
+    # Wait for healthy (Docker HEALTHCHECK)
+    echo "Waiting for startup..."
+    deadline=$((SECONDS + 60))
+    while [ $SECONDS -lt $deadline ]; do
+      status=$(docker inspect --format='{{.State.Health.Status}}' "$CONTAINER_NAME" 2>/dev/null || echo "unknown")
+      case "$status" in
+        healthy)
+          echo -e "\033[0;32m[ok]\033[0m pith is running (container: $CONTAINER_NAME)"
+          echo "  logs:  docker logs -f $CONTAINER_NAME"
+          echo "  stop:  make stop"
+          exit 0
+          ;;
+        unhealthy)
+          echo -e "\033[0;31m[error]\033[0m pith failed to start:"
+          docker logs --tail 20 "$CONTAINER_NAME"
+          docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
+          exit 1
+          ;;
+      esac
+      # Check if container exited
+      running=$(docker inspect --format='{{.State.Running}}' "$CONTAINER_NAME" 2>/dev/null || echo "false")
+      if [ "$running" = "false" ]; then
+        echo -e "\033[0;31m[error]\033[0m container exited:"
+        docker logs --tail 20 "$CONTAINER_NAME"
+        docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
+        exit 1
+      fi
+      sleep 1
+    done
+
+    echo -e "\033[0;31m[error]\033[0m startup timed out after 60s"
+    docker logs --tail 20 "$CONTAINER_NAME"
+    docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
+    exit 1
     ;;
   update)
     if ! command -v docker >/dev/null 2>&1; then

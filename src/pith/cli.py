@@ -122,6 +122,12 @@ async def cmd_run(_: argparse.Namespace) -> None:
     runtime = _load_runtime()
     async with runtime.storage:
         await runtime.initialize()
+
+        # Signal healthy startup (used by Docker HEALTHCHECK)
+        health_file = Path(runtime.workspace / ".pith" / "healthy")
+        health_file.parent.mkdir(parents=True, exist_ok=True)
+        health_file.touch()
+
         token_env = runtime.cfg.telegram.bot_token_env
         if os.environ.get(token_env):
             print("\033[0;32m[startup ok]\033[0m pith service started successfully")
