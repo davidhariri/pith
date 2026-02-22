@@ -104,7 +104,7 @@ async def _greet(runtime: Runtime, session_id: str) -> None:
 
 
 async def run_chat(runtime: Runtime) -> None:
-    session_id = await runtime.storage.ensure_active_session()
+    session_id = await runtime.new_session()
     history_path = runtime.workspace / ".pith" / "input_history"
     history_path.parent.mkdir(parents=True, exist_ok=True)
 
