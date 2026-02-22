@@ -44,6 +44,9 @@ class Runtime:
         await self.storage.ensure_schema()
         await self.extensions.refresh()
         await self.mcp_client.discover()
+        for warning in self.mcp_client.discovery_warnings:
+            print(f"[warn] {warning}")
+            await self.storage.log_event("mcp.discovery.warning", level="warning", payload={"message": warning})
         await self._ensure_bootstrap_state()
         self.log_dir.mkdir(parents=True, exist_ok=True)
 

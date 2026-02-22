@@ -27,8 +27,3 @@ mcp:
         - -y
         - "@modelcontextprotocol/server-filesystem"
         - /workspace
-    github:
-      transport: http
-      url: http://host.docker.internal:8787/mcp
-      headers:
-        Authorization: "Bearer ${GITHUB_MCP_TOKEN}"

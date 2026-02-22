@@ -29,11 +29,20 @@ class MCPClient:
         self.workspace_root = workspace_root
         self.servers = servers
         self.known_tools: dict[str, MCPTool] = {}
+        self.discovery_warnings: list[str] = []
 
     async def discover(self) -> None:
         self.known_tools = {}
+        self.discovery_warnings = []
         for server_name, server_cfg in self.servers.items():
-            for tool_name in await self._discover_tools(server_name, server_cfg):
+            try:
+                tool_names = await self._discover_tools(server_name, server_cfg)
+            except Exception as exc:
+                warning = f"MCP server '{server_name}' unavailable during startup: {type(exc).__name__}: {exc}"
+                self.discovery_warnings.append(warning)
+                continue
+
+            for tool_name in tool_names:
                 fq = f"{DEFAULT_MCP_PREFIX}{server_name}__{tool_name}"
                 self.known_tools[fq] = MCPTool(name=tool_name, server=server_name, source=server_name)
 
