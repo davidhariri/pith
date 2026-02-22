@@ -16,6 +16,7 @@ make run
 
 - copies `config.example.yaml` to `./config.yaml` if missing
 - copies `.env.example` to `.env` if missing
+- prompts for basic first-time values in `.env` (API key required, Telegram optional)
 
 Then it starts the Dockerized runtime.
 
@@ -29,11 +30,12 @@ make risk
 
 ## Commands
 
-- `make run` containerized runtime (requires Docker)
-- `make risk` run without Docker (requires `uv`)
+- `make run` build image and run service in Docker (requires Docker)
+- `make update` rebuild Docker image from scratch
+- `make risk` run service without Docker (requires `uv`)
 - `pith setup` create or refresh local config/env templates
 - `pith chat` interactive streaming terminal chat
-- `pith run` start telegram polling channel
+- `pith run` run service loop (Telegram optional if token is set)
 - `pith doctor` print runtime status
 - `pith logs tail` stream event log
 

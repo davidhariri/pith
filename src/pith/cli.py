@@ -82,8 +82,16 @@ async def cmd_run(_: argparse.Namespace) -> None:
     runtime = _load_runtime()
     async with runtime.storage:
         await runtime.initialize()
-        print("pith running Telegram channel")
-        await run_telegram(runtime)
+        token_env = runtime.cfg.telegram.bot_token_env
+        if os.environ.get(token_env):
+            print("pith service running (telegram enabled)")
+            await run_telegram(runtime)
+            return
+
+        print("pith service running (telegram disabled)")
+        print(f"set {token_env} in .env to enable Telegram transport")
+        print("use `pith chat` for local interactive chat")
+        await asyncio.Event().wait()
 
 
 async def cmd_chat(_: argparse.Namespace) -> None:
@@ -137,7 +145,7 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
 
     sub.add_parser("setup", help="Create starter config and env files")
-    sub.add_parser("run", help="Run telegram channel")
+    sub.add_parser("run", help="Run service loop (telegram optional)")
     sub.add_parser("chat", help="Interactive streaming terminal chat")
     sub.add_parser("doctor", help="Show runtime status")
 
