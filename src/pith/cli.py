@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import os
+import signal
 import sys
 from pathlib import Path
 
@@ -265,28 +266,63 @@ async def cmd_doctor(_: argparse.Namespace) -> None:
 
 
 async def cmd_status(_: argparse.Namespace) -> None:
+    _pid_file, _health_file, pid = _read_pid()
+    if pid is None:
+        console.print("[red]stopped[/red]  no running service found")
+        console.print("  run `pith run` to start the service")
+        return
+    console.print(f"[green]running[/green]  pid {pid}")
+
+
+def _read_pid() -> tuple[Path, Path, int | None]:
+    """Read PID and health file paths. Returns (pid_file, health_file, pid_or_None)."""
     cfg_result = load_config()
     workspace = Path(cfg_result.config.runtime.workspace_path)
     pith_dir = workspace / ".pith"
     pid_file = pith_dir / "pid"
     health_file = pith_dir / "healthy"
 
-    if not pid_file.exists() or not health_file.exists():
-        console.print("[red]stopped[/red]  no running service found")
-        console.print("  run `pith run` to start the service")
-        return
+    if not pid_file.exists():
+        return pid_file, health_file, None
 
     pid = int(pid_file.read_text().strip())
     try:
-        os.kill(pid, 0)  # check if process exists (signal 0 = no-op)
+        os.kill(pid, 0)
     except OSError:
-        console.print(f"[red]stopped[/red]  stale pid {pid} (process not running)")
-        console.print("  run `pith run` to start the service")
         pid_file.unlink(missing_ok=True)
         health_file.unlink(missing_ok=True)
+        return pid_file, health_file, None
+
+    return pid_file, health_file, pid
+
+
+async def cmd_stop(_: argparse.Namespace) -> None:
+    pid_file, health_file, pid = _read_pid()
+    if pid is None:
+        console.print("[yellow]not running[/yellow]")
         return
 
-    console.print(f"[green]running[/green]  pid {pid}")
+    os.kill(pid, signal.SIGTERM)
+    console.print(f"[green]stopped[/green]  sent SIGTERM to {pid}")
+    pid_file.unlink(missing_ok=True)
+    health_file.unlink(missing_ok=True)
+
+
+async def cmd_restart(_: argparse.Namespace) -> None:
+    pid_file, health_file, pid = _read_pid()
+    if pid is not None:
+        os.kill(pid, signal.SIGTERM)
+        console.print(
+            f"[green]stopped[/green]  sent SIGTERM to {pid}"
+        )
+        pid_file.unlink(missing_ok=True)
+        health_file.unlink(missing_ok=True)
+        # Brief pause so the port/socket is released
+        await asyncio.sleep(0.5)
+    else:
+        console.print("[yellow]no running service — starting fresh[/yellow]")
+
+    await cmd_run(_)
 
 
 async def cmd_logs_tail(_: argparse.Namespace) -> None:
@@ -317,6 +353,8 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("run", help="Run service loop (telegram optional)")
     sub.add_parser("chat", help="Interactive streaming terminal chat")
     sub.add_parser("status", help="Check if the service is running")
+    sub.add_parser("stop", help="Stop the running service")
+    sub.add_parser("restart", help="Stop and restart the service")
     sub.add_parser("doctor", help="Show configuration details")
 
     logs = sub.add_parser("logs", help="View local logs")
@@ -338,6 +376,10 @@ async def run() -> None:
         await cmd_chat(args)
     elif args.command == "status":
         await cmd_status(args)
+    elif args.command == "stop":
+        await cmd_stop(args)
+    elif args.command == "restart":
+        await cmd_restart(args)
     elif args.command == "doctor":
         await cmd_doctor(args)
     elif args.command == "logs":
