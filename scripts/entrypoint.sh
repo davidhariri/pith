@@ -29,40 +29,68 @@ fatal() {
   exit 1
 }
 
-# -- Bootstrap: ensure config.yaml and .env are ready --
-
-ensure_configured() {
-  if [[ ! -t 0 ]]; then
-    # Non-interactive: just check, don't prompt
-    if [[ ! -f "$CONFIG_PATH" ]]; then
-      fatal "No config found at $CONFIG_PATH." "Run 'make run' interactively first."
+source_env() {
+  [[ -f "$ENV_FILE" ]] || return 0
+  while IFS='=' read -r key value; do
+    key=$(echo "$key" | xargs)
+    [[ -z "$key" || "$key" == \#* ]] && continue
+    value=$(echo "$value" | xargs | sed -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'$//")
+    if [[ -n "$key" && -z "${!key:-}" ]]; then
+      export "$key=$value"
     fi
-    return
+  done < "$ENV_FILE"
+}
+
+set_env_value() {
+  local key="$1" value="$2"
+  if [[ -f "$ENV_FILE" ]] && grep -q "^${key}=" "$ENV_FILE"; then
+    local tmp; tmp="$(mktemp)"
+    sed "s|^${key}=.*|${key}=${value}|" "$ENV_FILE" > "$tmp"
+    mv "$tmp" "$ENV_FILE"
+  else
+    echo "${key}=${value}" >> "$ENV_FILE"
+  fi
+}
+
+# Check if we have a working API key. Returns 0 if ready, 1 if not.
+check_api_key() {
+  [[ -f "$CONFIG_PATH" ]] || return 1
+
+  local key_env
+  key_env=$(grep 'api_key_env:' "$CONFIG_PATH" 2>/dev/null | head -1 | awk '{print $2}')
+  [[ -z "$key_env" ]] && return 1
+
+  source_env
+  local key_val="${!key_env:-}"
+  [[ -n "$key_val" ]] && return 0
+  return 1
+}
+
+# Interactive setup: provider, model, API key. Writes config.yaml and .env.
+run_setup() {
+  echo -e "${CYAN}pith setup${RESET}\n"
+
+  read -r -p "Model provider (anthropic/openai) [anthropic]: " provider
+  provider="${provider:-anthropic}"
+
+  case "$provider" in
+    anthropic) default_model="claude-sonnet-4-20250514"; default_key_env="ANTHROPIC_API_KEY" ;;
+    openai)    default_model="gpt-4o";                   default_key_env="OPENAI_API_KEY" ;;
+    *)         default_model="";                         default_key_env="API_KEY" ;;
+  esac
+
+  read -r -p "Model name [$default_model]: " model_name
+  model_name="${model_name:-$default_model}"
+
+  read -r -p "API key env var [$default_key_env]: " api_key_env
+  api_key_env="${api_key_env:-$default_key_env}"
+
+  read -r -p "API key: " api_key_value
+  if [[ -z "$api_key_value" ]]; then
+    fatal "API key is required." "Cannot start without a model API key."
   fi
 
-  # Step 1: config.yaml
-  if [[ ! -f "$CONFIG_PATH" ]]; then
-    echo -e "${CYAN}First-time setup${RESET}\n"
-
-    # Provider
-    read -r -p "Model provider (anthropic/openai) [anthropic]: " provider
-    provider="${provider:-anthropic}"
-
-    # Model name
-    case "$provider" in
-      anthropic) default_model="claude-sonnet-4-20250514"; default_key_env="ANTHROPIC_API_KEY" ;;
-      openai)    default_model="gpt-4o";                   default_key_env="OPENAI_API_KEY" ;;
-      *)         default_model="";                         default_key_env="API_KEY" ;;
-    esac
-
-    read -r -p "Model name [$default_model]: " model_name
-    model_name="${model_name:-$default_model}"
-
-    read -r -p "API key env var name [$default_key_env]: " api_key_env
-    api_key_env="${api_key_env:-$default_key_env}"
-
-    # Write config.yaml
-    cat > "$CONFIG_PATH" <<YAML
+  cat > "$CONFIG_PATH" <<YAML
 version: 1
 
 runtime:
@@ -76,65 +104,29 @@ model:
   api_key_env: $api_key_env
   temperature: 0.2
 YAML
-    echo "wrote $CONFIG_PATH"
-  fi
 
-  # Step 2: .env with API key
-  # Read api_key_env from config
-  api_key_env=$(grep 'api_key_env:' "$CONFIG_PATH" | head -1 | awk '{print $2}')
+  # Reset .env with just the key
+  echo "$api_key_env=$api_key_value" > "$ENV_FILE"
+  export "$api_key_env=$api_key_value"
 
-  if [[ -z "$api_key_env" ]]; then
-    fatal "config.yaml is missing model.api_key_env." "Fix config.yaml and retry."
-  fi
-
-  # Create .env if missing
-  if [[ ! -f "$ENV_FILE" ]]; then
-    echo "$api_key_env=" > "$ENV_FILE"
-  fi
-
-  # Source .env to check current value
-  set +u
-  source_env
-  eval "current_key=\${$api_key_env:-}"
-  set -u
-
-  if [[ -z "$current_key" ]]; then
-    echo ""
-    read -r -p "$api_key_env is not set. Enter your API key: " api_key_value
-    if [[ -z "$api_key_value" ]]; then
-      fatal "API key is required." "Set $api_key_env in .env and retry."
-    fi
-    set_env_value "$api_key_env" "$api_key_value"
-    echo "saved to .env"
-  fi
-
+  echo ""
+  echo "wrote $CONFIG_PATH"
+  echo "wrote $ENV_FILE"
   echo ""
 }
 
-source_env() {
-  if [[ -f "$ENV_FILE" ]]; then
-    while IFS='=' read -r key value; do
-      key=$(echo "$key" | xargs)
-      [[ -z "$key" || "$key" == \#* ]] && continue
-      value=$(echo "$value" | xargs | sed -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'$//")
-      if [[ -n "$key" && -z "${!key:-}" ]]; then
-        export "$key=$value"
-      fi
-    done < "$ENV_FILE"
+# Ensure we're ready to start. Run setup if anything is missing.
+ensure_configured() {
+  if check_api_key; then
+    source_env
+    return
   fi
-}
 
-set_env_value() {
-  local key="$1"
-  local value="$2"
-  if [[ -f "$ENV_FILE" ]] && grep -q "^${key}=" "$ENV_FILE"; then
-    local tmp
-    tmp="$(mktemp)"
-    sed "s|^${key}=.*|${key}=${value}|" "$ENV_FILE" > "$tmp"
-    mv "$tmp" "$ENV_FILE"
-  else
-    echo "${key}=${value}" >> "$ENV_FILE"
+  if [[ ! -t 0 ]]; then
+    fatal "pith is not configured." "Run 'make run' in an interactive terminal first."
   fi
+
+  run_setup
 }
 
 case "$MODE" in
@@ -161,7 +153,7 @@ case "$MODE" in
       fi
     fi
 
-    # Stop any existing container with the same name
+    # Stop any existing container
     if docker ps -q -f "name=$CONTAINER_NAME" 2>/dev/null | grep -q .; then
       echo "Stopping existing container '$CONTAINER_NAME'..."
       docker stop "$CONTAINER_NAME" >/dev/null 2>&1 || true
@@ -194,7 +186,6 @@ case "$MODE" in
           exit 1
           ;;
       esac
-      # Check if container exited
       running=$(docker inspect --format='{{.State.Running}}' "$CONTAINER_NAME" 2>/dev/null || echo "false")
       if [ "$running" = "false" ]; then
         echo -e "${RED}[error]${RESET} container exited:"
