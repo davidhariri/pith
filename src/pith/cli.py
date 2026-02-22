@@ -216,19 +216,14 @@ async def cmd_run(_: argparse.Namespace) -> None:
         (pith_dir / "pid").write_text(str(os.getpid()), encoding="utf-8")
 
         token_env = runtime.cfg.telegram.bot_token_env
-        if os.environ.get(token_env):
-            console.print("[green]\\[startup ok][/green] pith service started successfully")
-            console.print("transport: telegram enabled")
-            console.print("status: service loop active")
-            await run_telegram(runtime)
+        if not os.environ.get(token_env):
+            console.print("[yellow]no transport configured[/yellow]")
+            console.print(f"  set {token_env} in .env to enable Telegram")
+            console.print("  or use `pith chat` for local conversation")
             return
 
-        console.print("[green]\\[startup ok][/green] pith service started successfully")
-        console.print("transport: telegram disabled (optional)")
-        console.print(f"next step (optional): set {token_env} in .env to enable Telegram")
-        console.print("local chat: run `pith chat` in another terminal")
-        console.print("status: service loop active")
-        await asyncio.Event().wait()
+        console.print("[green]\\[startup ok][/green] pith service started (telegram)")
+        await run_telegram(runtime)
 
 
 async def cmd_chat(_: argparse.Namespace) -> None:
