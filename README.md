@@ -47,6 +47,11 @@ make risk
 - `aiosqlite` persistence
 - `httpx` I/O
 
+## Build output
+
+- Docker build logs are hidden by default for a cleaner startup UX.
+- To show full Docker build logs, run with: `PITH_VERBOSE_BUILD=1 make run`
+
 ## Notes
 
 - MCP tools are loaded from external config and called through the unified `tool_call` API.

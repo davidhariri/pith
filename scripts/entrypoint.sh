@@ -5,6 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 RED="\033[0;31m"
+YELLOW="\033[0;33m"
 RESET="\033[0m"
 
 USAGE="Usage: $0 <run|risk|update>"
@@ -36,6 +37,10 @@ fatal() {
   shift
   printf "%b\n" "$1"
   exit 1
+}
+
+warn() {
+  printf "${YELLOW}%s${RESET}\n" "$1"
 }
 
 set_env_value() {
@@ -102,7 +107,14 @@ case "$MODE" in
     fi
 
     echo "Building Docker image '$IMAGE_NAME'..."
-    docker build -t "$IMAGE_NAME" "$ROOT_DIR"
+    if [[ "${PITH_VERBOSE_BUILD:-0}" == "1" ]]; then
+      docker build -t "$IMAGE_NAME" "$ROOT_DIR"
+    else
+      if ! docker build -q -t "$IMAGE_NAME" "$ROOT_DIR" >/dev/null; then
+        fatal "Docker image build failed." \
+          "Run with verbose logs for details: PITH_VERBOSE_BUILD=1 make run"
+      fi
+    fi
 
     docker run --rm -it \
       -v "$ROOT_DIR:/workspace" \
@@ -120,7 +132,14 @@ case "$MODE" in
     fi
 
     echo "Rebuilding Docker image '$IMAGE_NAME' from scratch..."
-    docker build --pull --no-cache -t "$IMAGE_NAME" "$ROOT_DIR"
+    if [[ "${PITH_VERBOSE_BUILD:-0}" == "1" ]]; then
+      docker build --pull --no-cache -t "$IMAGE_NAME" "$ROOT_DIR"
+    else
+      if ! docker build --pull --no-cache -q -t "$IMAGE_NAME" "$ROOT_DIR" >/dev/null; then
+        fatal "Docker image rebuild failed." \
+          "Run with verbose logs for details: PITH_VERBOSE_BUILD=1 make update"
+      fi
+    fi
     ;;
   risk)
     if ! command -v uv >/dev/null 2>&1; then
