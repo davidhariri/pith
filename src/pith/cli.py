@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import os
+import sys
 from pathlib import Path
 
 import yaml
@@ -41,12 +42,75 @@ def _ask(prompt: str, default: str = "") -> str:
     return value or default
 
 
-async def cmd_setup(_: argparse.Namespace) -> None:
-    config_path = Path(os.environ.get("PITH_CONFIG", str(default_config_path()))).expanduser()
-    workspace = Path.cwd()
-    env_path = workspace / ".env"
+def _is_interactive() -> bool:
+    return sys.stdin.isatty()
 
-    print("pith setup\n")
+
+def _ensure_configured() -> None:
+    """Ensure config.yaml exists and API key is set. Prompt interactively if needed."""
+    config_path = Path(os.environ.get("PITH_CONFIG", str(default_config_path())))
+    env_path = Path.cwd() / ".env"
+
+    # No config.yaml — need setup
+    if not config_path.exists():
+        if not _is_interactive():
+            raise SystemExit(
+                f"config not found at {config_path}\n"
+                "run `pith setup` to create one, or set PITH_CONFIG"
+            )
+        print("no config found — running first-time setup\n")
+        _run_setup(config_path, env_path)
+        return
+
+    # Config exists — check API key
+    cfg_result = load_config(config_path=config_path)
+    api_key_env = cfg_result.config.model.api_key_env
+    api_key = os.environ.get(api_key_env, "").strip()
+
+    if api_key:
+        return  # all good
+
+    if not _is_interactive():
+        raise SystemExit(
+            f"API key not set: {api_key_env} is empty\n"
+            f"set it in .env or environment, then retry"
+        )
+
+    print(f"{api_key_env} is not set\n")
+    key_value = _ask(f"Enter your API key ({api_key_env})")
+    if not key_value:
+        raise SystemExit("API key is required to run pith")
+
+    os.environ[api_key_env] = key_value
+
+    # Persist to .env so it survives restarts
+    _set_env_value(env_path, api_key_env, key_value)
+    print()
+
+
+def _set_env_value(env_path: Path, key: str, value: str) -> None:
+    """Set a key=value in .env, creating or updating as needed."""
+    lines: list[str] = []
+    found = False
+
+    if env_path.exists():
+        for line in env_path.read_text().splitlines():
+            if line.startswith(f"{key}="):
+                lines.append(f"{key}={value}")
+                found = True
+            else:
+                lines.append(line)
+
+    if not found:
+        lines.append(f"{key}={value}")
+
+    lines.append("")  # trailing newline
+    env_path.write_text("\n".join(lines), encoding="utf-8")
+
+
+def _run_setup(config_path: Path, env_path: Path) -> None:
+    """Interactive setup flow — creates config.yaml and .env."""
+    workspace = Path.cwd()
 
     # Provider
     provider = _ask("Model provider (anthropic/openai/other)", "anthropic")
@@ -61,7 +125,12 @@ async def cmd_setup(_: argparse.Namespace) -> None:
     api_key_env = _ask("API key env var name", default_key_env)
 
     # API key value
-    api_key_value = _ask("API key value (or leave blank to set later in .env)", "")
+    api_key_value = _ask("API key value")
+    if not api_key_value:
+        raise SystemExit("API key is required to run pith")
+
+    # Set in current process so _load_runtime() works
+    os.environ[api_key_env] = api_key_value
 
     # Telegram
     enable_telegram = _ask("Enable Telegram? (y/n)", "n").lower().startswith("y")
@@ -96,11 +165,7 @@ async def cmd_setup(_: argparse.Namespace) -> None:
     config_path.write_text(yaml.safe_dump(config_data, sort_keys=False), encoding="utf-8")
 
     # Write .env
-    env_lines: list[str] = []
-    if api_key_value:
-        env_lines.append(f"{api_key_env}={api_key_value}")
-    else:
-        env_lines.append(f"{api_key_env}=")
+    env_lines: list[str] = [f"{api_key_env}={api_key_value}"]
     if enable_telegram:
         if telegram_token:
             env_lines.append(f"TELEGRAM_BOT_TOKEN={telegram_token}")
@@ -112,13 +177,20 @@ async def cmd_setup(_: argparse.Namespace) -> None:
 
     print(f"\nwrote config: {config_path}")
     print(f"wrote .env: {env_path}")
-    if not api_key_value:
-        print(f"next: set {api_key_env} in .env before running pith")
+    print()
+
+
+async def cmd_setup(_: argparse.Namespace) -> None:
+    config_path = Path(os.environ.get("PITH_CONFIG", str(default_config_path()))).expanduser()
+    env_path = Path.cwd() / ".env"
+    print("pith setup\n")
+    _run_setup(config_path, env_path)
 
 
 async def cmd_run(_: argparse.Namespace) -> None:
     from .channels.telegram import run_telegram
 
+    _ensure_configured()
     runtime = _load_runtime()
     async with runtime.storage:
         await runtime.initialize()
@@ -145,6 +217,7 @@ async def cmd_run(_: argparse.Namespace) -> None:
 
 
 async def cmd_chat(_: argparse.Namespace) -> None:
+    _ensure_configured()
     runtime = _load_runtime()
     async with runtime.storage:
         await runtime.initialize()
