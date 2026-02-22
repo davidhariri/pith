@@ -1,4 +1,5 @@
 # Copy to ./config.yaml in the repo root (or set PITH_CONFIG to another path).
+# Or run `uv run pith setup` to generate this interactively.
 
 version: 1
 
@@ -8,9 +9,9 @@ runtime:
   log_dir: /workspace/.pith/logs
 
 model:
-  provider: openai
-  model: gpt-5
-  api_key_env: OPENAI_API_KEY
+  provider: anthropic
+  model: claude-sonnet-4-20250514
+  api_key_env: ANTHROPIC_API_KEY
   base_url: null
   temperature: 0.2
 

@@ -1,6 +1,6 @@
 # pith
 
-A minimal, self-extending personal AI agent. Async Python, Docker-contained.
+A minimal, self-extending personal AI agent. Async Python, optionally containerized.
 
 ## Philosophy
 
@@ -45,7 +45,6 @@ ext/channels/* ──┘        ↓
 Receives messages, assembles context, calls model, executes tool calls, replies.
 
 - Uses `pydantic-ai` for model/tool orchestration and provider compatibility.
-- Uses `uvicorn` only for optional webhook/admin ASGI endpoints.
 - Async Python throughout.
 
 **2. Prompt and bootstrap state machine**
@@ -73,9 +72,12 @@ See `docs/decisions/001-telegram-polling.md` and `docs/decisions/003-extension-i
 - `write`
 - `edit`
 - `bash`
-- `tool_call`
 - `memory_save`
 - `memory_search`
+- `set_profile`
+- `tool_call` (catch-all for extension and MCP tools)
+
+Each built-in tool is registered individually with typed parameters and descriptions. The model sees proper schemas for each. `tool_call` is only used for dynamically-loaded extension and MCP tools.
 
 Tool surface stays intentionally small. Growth comes from agent-authored extension tools.
 
@@ -127,7 +129,7 @@ Calls external MCP tools (stdio or HTTP). MCP server definitions come from exter
 - Model/provider configuration is also loaded from this external config.
 - API secrets are loaded from `.env`/environment variables referenced by config.
 - MCP tools are exposed in runtime tool namespace as `MCP__<server>__<tool>`.
-- Unified `tool_call(name, args)` routes to either extension tools or MCP tools.
+- Extension and MCP tools are called via the `tool_call(name, args)` catch-all tool.
 
 **9. Model runtime**
 
@@ -137,12 +139,11 @@ See `docs/decisions/010-model-adapter.md`.
 
 **10. Container boundary**
 
-Docker only. The agent runs with broad in-container freedom, constrained by mount and container isolation.
+Docker is available for containerized deployment but not required. When running locally, basic path sandboxing constrains file access to the workspace directory. When running in Docker, the container provides additional process-level isolation.
 
-- Workspace mount read/write.
-- No host FS access beyond mounted workspace.
-- No Docker socket mount.
-- External runtime config is mounted read-only and outside workspace paths.
+- Path sandboxing: all file tools resolve paths relative to workspace and reject escapes.
+- Docker (optional): workspace mount read/write, no host FS access beyond mounted paths, no Docker socket mount.
+- External runtime config is outside workspace paths.
 
 See `docs/decisions/004-container-runtime.md`, `docs/decisions/008-tool-execution-safety.md`, and `docs/decisions/012-external-config.md`.
 
@@ -171,8 +172,9 @@ See `docs/decisions/014-interaction-surfaces-and-slash-commands.md`.
 
 - Python 3.12+
 - `pydantic-ai`
-- `uvicorn`
 - `aiosqlite`
+- `httpx`
+- `prompt-toolkit`
 - No web framework
 
 ## Developer Tooling
