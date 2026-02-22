@@ -14,7 +14,7 @@ make run
 
 `make run` bootstraps runtime files on first run:
 
-- copies `config.example.yaml` to `~/.config/pith/config.yaml` if missing
+- copies `config.example.yaml` to `./config.yaml` if missing
 - copies `.env.example` to `.env` if missing
 
 Then it starts the Dockerized runtime.

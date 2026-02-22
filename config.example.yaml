@@ -1,5 +1,4 @@
-# Copy to ~/.config/pith/config.yaml (or set PITH_CONFIG to another path).
-# Keep this file outside the agent workspace; mount it read-only in Docker.
+# Copy to ./config.yaml in the repo root (or set PITH_CONFIG to another path).
 
 version: 1
 

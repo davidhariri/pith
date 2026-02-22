@@ -4,8 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-DEFAULT_CONFIG_DIR = Path.home() / ".config" / "pith"
-DEFAULT_CONFIG_PATH = DEFAULT_CONFIG_DIR / "config.yaml"
+DEFAULT_CONFIG_PATH = Path.cwd() / "config.yaml"
 DEFAULT_MCP_PREFIX = "MCP__"
 RESERVED_TOOL_PREFIX = DEFAULT_MCP_PREFIX
 SOUL_FILE = "SOUL.md"

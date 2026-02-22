@@ -17,7 +17,7 @@ fi
 
 CONFIG_EXAMPLE="$ROOT_DIR/config.example.yaml"
 ENV_EXAMPLE="$ROOT_DIR/.env.example"
-DEFAULT_CONFIG="${PITH_CONFIG:-$HOME/.config/pith/config.yaml}"
+DEFAULT_CONFIG="${PITH_CONFIG:-$ROOT_DIR/config.yaml}"
 ENV_FILE="$ROOT_DIR/.env"
 IMAGE_NAME="${PITH_DOCKER_IMAGE:-pith:dev}"
 
@@ -67,8 +67,6 @@ if ! docker info >/dev/null 2>&1; then
 
     docker run --rm -it \
       -v "$ROOT_DIR:/workspace" \
-      -v "$DEFAULT_CONFIG:/run/pith/config.yaml:ro" \
-      -e PITH_CONFIG=/run/pith/config.yaml \
       -w /workspace \
       "$IMAGE_NAME"
     ;;
