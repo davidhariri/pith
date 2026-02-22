@@ -90,7 +90,8 @@ class Runtime:
             user_profile = profiles.get("user", {})
 
             if bootstrap:
-                parts.append(textwrap.dedent("""\
+                parts.append(
+                    textwrap.dedent("""\
                     You are pith — a new personal AI agent, \
                     just coming online for the first time.
 
@@ -120,25 +121,22 @@ class Runtime:
                     Then tell them you're ready.
 
                     Start by introducing yourself and asking \
-                    who they are."""))
+                    who they are.""")
+                )
             else:
                 agent_name = agent_profile.get("name", "pith")
                 soul = runtime._read_soul()
 
-                identity = (
-                    f"You are {agent_name}, "
-                    "a personal AI agent."
-                )
+                identity = f"You are {agent_name}, a personal AI agent."
                 if user_profile.get("name"):
-                    identity += (
-                        f" Your user is {user_profile['name']}."
-                    )
+                    identity += f" Your user is {user_profile['name']}."
                 parts.append(identity)
 
                 if soul:
                     parts.append(soul)
 
-                parts.append(textwrap.dedent("""\
+                parts.append(
+                    textwrap.dedent("""\
                     ## Guidelines
                     - Be conversational and natural. \
                     You're a thinking partner, not a \
@@ -149,7 +147,8 @@ class Runtime:
                     - When a conversation starts, greet \
                     your user warmly and naturally.
                     - Keep responses concise but not \
-                    robotic."""))
+                    robotic.""")
+                )
 
             # Profiles (show remaining fields not already used in identity)
             if agent_profile or user_profile:
@@ -320,13 +319,11 @@ class Runtime:
                 if isinstance(node, ModelRequestNode):
                     async with node.stream(run.ctx) as stream:
                         async for event in stream:
-                            is_start = (
-                                isinstance(event, PartStartEvent)
-                                and isinstance(event.part, TextPart)
+                            is_start = isinstance(event, PartStartEvent) and isinstance(
+                                event.part, TextPart
                             )
-                            is_delta = (
-                                isinstance(event, PartDeltaEvent)
-                                and isinstance(event.delta, TextPartDelta)
+                            is_delta = isinstance(event, PartDeltaEvent) and isinstance(
+                                event.delta, TextPartDelta
                             )
                             if is_start and event.part.content:
                                 full_text.append(event.part.content)

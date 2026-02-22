@@ -12,6 +12,8 @@ dependencies = [
   "questionary",
   "rich",
   "PyYAML",
+  "starlette",
+  "uvicorn",
 ]
 
 [dependency-groups]

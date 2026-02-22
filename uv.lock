@@ -1621,6 +1621,8 @@ dependencies = [
     { name = "pyyaml" },
     { name = "questionary" },
     { name = "rich" },
+    { name = "starlette" },
+    { name = "uvicorn" },
 ]
 
 [package.dev-dependencies]
@@ -1639,6 +1641,8 @@ requires-dist = [
     { name = "pyyaml" },
     { name = "questionary" },
     { name = "rich" },
+    { name = "starlette" },
+    { name = "uvicorn" },
 ]
 
 [package.metadata.requires-dev]

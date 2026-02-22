@@ -83,8 +83,7 @@ async def _ensure_configured() -> None:
     if not config_path.exists():
         if not _is_interactive():
             raise SystemExit(
-                f"config not found at {config_path}\n"
-                "run `pith setup` interactively first"
+                f"config not found at {config_path}\nrun `pith setup` interactively first"
             )
         await _run_setup(config_path, env_path)
         return
@@ -99,8 +98,7 @@ async def _ensure_configured() -> None:
 
     if not _is_interactive():
         raise SystemExit(
-            f"API key not set: {api_key_env} is empty\n"
-            "run `pith setup` interactively first"
+            f"API key not set: {api_key_env} is empty\nrun `pith setup` interactively first"
         )
 
     # Config exists but key is missing — run full setup
@@ -143,8 +141,7 @@ async def _run_setup(config_path: Path, env_path: Path) -> None:
 
     # Model selection
     model_choices = [
-        questionary.Choice(title=label, value=model_id)
-        for model_id, label in preset["models"]
+        questionary.Choice(title=label, value=model_id) for model_id, label in preset["models"]
     ]
     model_name = await questionary.select("Model:", choices=model_choices).ask_async()
     if model_name is None:
@@ -202,7 +199,10 @@ async def cmd_setup(_: argparse.Namespace) -> None:
 
 
 async def cmd_run(_: argparse.Namespace) -> None:
+    import uvicorn
+
     from .channels.telegram import run_telegram
+    from .server import create_app
 
     await _ensure_configured()
     runtime = _load_runtime()
@@ -215,35 +215,59 @@ async def cmd_run(_: argparse.Namespace) -> None:
         (pith_dir / "healthy").touch()
         (pith_dir / "pid").write_text(str(os.getpid()), encoding="utf-8")
 
-        transports = []
+        tasks = []
 
+        # HTTP API server
+        app = create_app(runtime)
+        server_cfg = runtime.cfg.server
+        uvi_config = uvicorn.Config(
+            app,
+            host=server_cfg.host,
+            port=server_cfg.port,
+            log_level="warning",
+        )
+        server = uvicorn.Server(uvi_config)
+        tasks.append(server.serve())
+        console.print(f"[green]✓[/green] api on {server_cfg.host}:{server_cfg.port}")
+
+        # Telegram (optional, in-process)
         token_env = runtime.cfg.telegram.bot_token_env
         if os.environ.get(token_env):
             console.print("[green]✓[/green] telegram")
-            transports.append(run_telegram(runtime))
+            tasks.append(run_telegram(runtime))
 
         if _is_interactive():
-            console.print("[green]✓[/green] cli")
+            console.print("\n  run [bold]pith chat[/bold] in another terminal to start talking")
 
-        if not transports:
-            if _is_interactive():
-                console.print("\n  run [bold]pith chat[/bold] to start talking")
-            else:
-                console.print("[yellow]no transport available[/yellow]")
-                console.print(f"  set {token_env} in .env for Telegram")
-            return
-
-        await asyncio.gather(*transports)
+        await asyncio.gather(*tasks)
 
 
 async def cmd_chat(_: argparse.Namespace) -> None:
     from .channels.chat import run_chat
+    from .client import PithClient
+    from .constants import DEFAULT_API_PORT
 
     await _ensure_configured()
-    runtime = _load_runtime()
-    async with runtime.storage:
-        await runtime.initialize()
-        await run_chat(runtime)
+
+    # Determine server URL from config (best-effort) or default
+    try:
+        cfg_result = load_config()
+        port = cfg_result.config.server.port
+    except Exception:
+        port = DEFAULT_API_PORT
+
+    client = PithClient(f"http://localhost:{port}")
+    try:
+        await client.health()
+    except Exception:
+        console.print("[red]error:[/red] pith server is not running")
+        console.print("  start it with [bold]pith run[/bold]")
+        return
+
+    try:
+        await run_chat(client)
+    finally:
+        await client.close()
 
 
 async def cmd_doctor(_: argparse.Namespace) -> None:
@@ -312,9 +336,7 @@ async def cmd_restart(_: argparse.Namespace) -> None:
     pid_file, health_file, pid = _read_pid()
     if pid is not None:
         os.kill(pid, signal.SIGTERM)
-        console.print(
-            f"[green]stopped[/green]  sent SIGTERM to {pid}"
-        )
+        console.print(f"[green]stopped[/green]  sent SIGTERM to {pid}")
         pid_file.unlink(missing_ok=True)
         health_file.unlink(missing_ok=True)
         # Brief pause so the port/socket is released

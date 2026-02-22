@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import sys
+from pathlib import Path
 
 from prompt_toolkit import PromptSession
 from prompt_toolkit.completion import WordCompleter
@@ -11,15 +12,17 @@ from prompt_toolkit.history import FileHistory
 from prompt_toolkit.styles import Style
 from rich.console import Console
 
-from ..runtime import Runtime
+from ..client import PithClient
 
 console = Console()
 
-_style = Style.from_dict({
-    "placeholder": "gray italic",
-    "completion-menu": "bg:default default",
-    "completion-menu.completion.current": "bold",
-})
+_style = Style.from_dict(
+    {
+        "placeholder": "gray italic",
+        "completion-menu": "bg:default default",
+        "completion-menu.completion.current": "bold",
+    }
+)
 
 _slash_completer = WordCompleter(
     ["/quit", "/new", "/compact", "/info"],
@@ -29,7 +32,7 @@ _slash_completer = WordCompleter(
 _SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
 
 
-async def _send(runtime: Runtime, message: str, session_id: str) -> bool:
+async def _send(client: PithClient, message: str, session_id: str) -> bool:
     """Send a message and stream the response to stdout. Returns True on success."""
     started = False
     spinner_task: asyncio.Task[None] | None = None
@@ -68,7 +71,7 @@ async def _send(runtime: Runtime, message: str, session_id: str) -> bool:
 
     try:
         spinner_task = asyncio.create_task(_spin())
-        await runtime.chat(
+        await client.chat(
             message,
             session_id=session_id,
             on_text=on_text,
@@ -93,20 +96,23 @@ async def _send(runtime: Runtime, message: str, session_id: str) -> bool:
         return False
 
 
-async def _greet(runtime: Runtime, session_id: str) -> None:
+async def _greet(client: PithClient, session_id: str) -> None:
     """Send an opening signal so the LLM greets the user."""
-    bootstrap = not await runtime.storage.get_bootstrap_state()
+    info = await client.get_info(session_id)
+    bootstrap = not info.get("bootstrap_complete", True)
     console.print()
     if bootstrap:
-        await _send(runtime, "Hello — I just started pith for the first time.", session_id)
+        await _send(client, "Hello — I just started pith for the first time.", session_id)
     else:
-        await _send(runtime, "[new conversation]", session_id)
+        await _send(client, "[new conversation]", session_id)
 
 
-async def run_chat(runtime: Runtime) -> None:
-    session_id = await runtime.new_session()
-    history_path = runtime.workspace / ".pith" / "input_history"
-    history_path.parent.mkdir(parents=True, exist_ok=True)
+async def run_chat(client: PithClient) -> None:
+    session_id = await client.new_session()
+
+    history_dir = Path.home() / ".local" / "share" / "pith"
+    history_dir.mkdir(parents=True, exist_ok=True)
+    history_path = history_dir / "input_history"
 
     session: PromptSession[str] = PromptSession(
         history=FileHistory(str(history_path)),
@@ -115,7 +121,7 @@ async def run_chat(runtime: Runtime) -> None:
         complete_while_typing=True,
     )
 
-    await _greet(runtime, session_id)
+    await _greet(client, session_id)
 
     while True:
         try:
@@ -134,16 +140,18 @@ async def run_chat(runtime: Runtime) -> None:
         if text == "/quit":
             break
         if text == "/new":
-            session_id = await runtime.new_session()
-            await _greet(runtime, session_id)
+            session_id = await client.new_session()
+            await _greet(client, session_id)
             continue
         if text == "/compact":
-            result = await runtime.compact_session(session_id)
+            result = await client.compact_session(session_id)
             console.print(result)
             continue
         if text == "/info":
-            info = await runtime.get_info(session_id)
-            console.print(info)
+            import json
+
+            info = await client.get_info(session_id)
+            console.print(json.dumps(info, indent=2, sort_keys=True))
             continue
 
-        await _send(runtime, text, session_id)
+        await _send(client, text, session_id)

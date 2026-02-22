@@ -52,11 +52,18 @@ class MCPServerConfig:
 
 
 @dataclass
+class ServerConfig:
+    host: str = "0.0.0.0"
+    port: int = 8420
+
+
+@dataclass
 class Config:
     version: int
     runtime: RuntimeConfig
     model: ModelConfig
     telegram: TelegramConfig = field(default_factory=TelegramConfig)
+    server: ServerConfig = field(default_factory=ServerConfig)
     mcp_servers: dict[str, MCPServerConfig] = field(default_factory=dict)
 
 
@@ -140,6 +147,14 @@ def _parse_telegram(raw: dict[str, Any]) -> TelegramConfig:
     )
 
 
+def _parse_server(raw: dict[str, Any]) -> ServerConfig:
+    server = raw.get("server", {})
+    return ServerConfig(
+        host=str(server.get("host", "0.0.0.0")),
+        port=int(server.get("port", 8420)),
+    )
+
+
 def _parse_mcp_servers(raw: dict[str, Any]) -> dict[str, MCPServerConfig]:
     out: dict[str, MCPServerConfig] = {}
     for name, cfg in (raw or {}).items():
@@ -174,6 +189,7 @@ def load_config(
     model = _parse_model(raw)
     telegram = _parse_telegram(raw)
     mcp_servers = _parse_mcp_servers(raw.get("mcp", {}).get("servers", {}))
+    server = _parse_server(raw)
 
     return ConfigLoadResult(
         path=path,
@@ -182,6 +198,7 @@ def load_config(
             runtime=runtime,
             model=model,
             telegram=telegram,
+            server=server,
             mcp_servers=mcp_servers,
         ),
     )

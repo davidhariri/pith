@@ -20,23 +20,27 @@ A minimal, self-extending personal AI agent. Async Python, optionally containeri
 ## Architecture
 
 ```
-CLI TUI (core) ──┐
-Telegram (core) ─┼─→ Agent Loop ─→ PydanticAI Agent
-ext/channels/* ──┘        ↓
-                    ┌───────────┐
-                    │ Tools     │
-                    │ - read    │
-                    │ - write   │
-                    │ - edit    │
-                    │ - bash    │
-                    │ - tool_call
-                    │ - memory_save
-                    │ - memory_search
-                    │ + ext/*   │
-                    └───────────┘
-                         ↓
-    SOUL.md + profiles/memory/sessions (SQLite + FTS5)
+┌─────────────┐     ┌─────────────┐
+│  pith chat   │     │  future web  │
+│  (terminal)  │     │  client      │
+└──────┬───────┘     └──────┬───────┘
+       │  HTTP/SSE          │  HTTP/SSE
+       └────────┬───────────┘
+                │
+       ┌────────▼────────┐
+       │   pith run       │  ← Starlette + uvicorn
+       │   (HTTP server)  │
+       │                  │
+       │   ┌──────────┐   │
+       │   │ Runtime   │   │
+       │   │ Storage   │   │
+       │   └──────────┘   │
+       │                  │
+       │   Telegram task  │  ← direct Runtime access (in-process)
+       └──────────────────┘
 ```
+
+`pith run` is a long-running server that owns the Runtime and exposes it via HTTP/SSE. Out-of-process clients (like `pith chat`) connect over HTTP. Telegram stays in-process with direct Runtime access.
 
 ## Components
 
@@ -158,8 +162,9 @@ See `docs/decisions/009-observability.md`.
 
 **12. Interaction surfaces**
 
-- CLI surface: `pith setup`, `pith run`, `pith chat`, `pith doctor`, `pith logs tail`.
-- `pith chat` is the primary operator interface: interactive TUI with streaming assistant output.
+- CLI surface: `pith setup`, `pith run`, `pith chat`, `pith doctor`, `pith status`, `pith stop`, `pith restart`, `pith logs tail`.
+- `pith run` starts the HTTP API server (Starlette + uvicorn) and optionally Telegram. It owns the Runtime.
+- `pith chat` connects to the running server via HTTP/SSE. It is the primary operator interface: interactive TUI with streaming assistant output.
 - `pith chat` shows live runtime states and tool-call events while a turn is executing.
 - Telegram is intentionally limited UX: concise text responses and no full live event stream.
 - Both CLI chat and Telegram support slash commands: `/new`, `/compact`, `/info`.
@@ -175,7 +180,7 @@ See `docs/decisions/014-interaction-surfaces-and-slash-commands.md`.
 - `aiosqlite`
 - `httpx`
 - `prompt-toolkit`
-- No web framework
+- `starlette` + `uvicorn` (HTTP API server)
 
 ## Developer Tooling
 
