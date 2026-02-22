@@ -93,6 +93,12 @@ async def _send(runtime: Runtime, message: str, session_id: str) -> bool:
         return False
 
 
+async def _greet(runtime: Runtime, session_id: str) -> None:
+    """Send an opening signal so the LLM greets the user."""
+    console.print()
+    await _send(runtime, "[start]", session_id)
+
+
 async def run_chat(runtime: Runtime) -> None:
     session_id = await runtime.storage.ensure_active_session()
     history_path = runtime.workspace / ".pith" / "input_history"
@@ -105,21 +111,7 @@ async def run_chat(runtime: Runtime) -> None:
         complete_while_typing=True,
     )
 
-    bootstrap_complete = await runtime.storage.get_bootstrap_state()
-
-    if not bootstrap_complete:
-        # First run — kick off bootstrap to collect identities
-        console.print()
-        await _send(runtime, "Hello — let's get started.", session_id)
-    else:
-        # Resuming — show session context
-        history = await runtime.storage.get_message_history(session_id)
-        profiles = await runtime.storage.all_profile_fields()
-        agent_name = profiles.get("agent", {}).get("name", "pith")
-        if history:
-            console.print(f"[dim]resuming session with {agent_name}  (/quit to exit)[/dim]")
-        else:
-            console.print(f"[dim]new session with {agent_name}  (/quit to exit)[/dim]")
+    await _greet(runtime, session_id)
 
     while True:
         try:
@@ -139,7 +131,7 @@ async def run_chat(runtime: Runtime) -> None:
             break
         if text == "/new":
             session_id = await runtime.new_session()
-            console.print(f"new session: {session_id}")
+            await _greet(runtime, session_id)
             continue
         if text == "/compact":
             result = await runtime.compact_session(session_id)
