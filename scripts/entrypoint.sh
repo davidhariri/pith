@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+USAGE="Usage: $0 <run|risk>"
+MODE="${1:-}"
+
+if [[ -z "$MODE" ]]; then
+  echo "$USAGE"
+  exit 1
+fi
+
+CONFIG_EXAMPLE="$ROOT_DIR/config.example.yaml"
+ENV_EXAMPLE="$ROOT_DIR/.env.example"
+DEFAULT_CONFIG="${PITH_CONFIG:-$HOME/.config/pith/config.yaml}"
+ENV_FILE="$ROOT_DIR/.env"
+IMAGE_NAME="${PITH_DOCKER_IMAGE:-pith:dev}"
+
+if [[ ! -f "$CONFIG_EXAMPLE" ]]; then
+  echo "Missing config template: $CONFIG_EXAMPLE"
+  exit 1
+fi
+
+if [[ ! -f "$ENV_EXAMPLE" ]]; then
+  echo "Missing env template: $ENV_EXAMPLE"
+  exit 1
+fi
+
+mkdir -p "$(dirname "$DEFAULT_CONFIG")"
+if [[ ! -f "$DEFAULT_CONFIG" ]]; then
+  cp "$CONFIG_EXAMPLE" "$DEFAULT_CONFIG"
+  echo "Created config template at $DEFAULT_CONFIG"
+fi
+
+if [[ ! -f "$ENV_FILE" ]]; then
+  cp "$ENV_EXAMPLE" "$ENV_FILE"
+  echo "Created environment template at $ENV_FILE"
+fi
+
+case "$MODE" in
+  run)
+    if ! command -v docker >/dev/null 2>&1; then
+      echo "Docker is required for 'make run'."
+      echo "Install Docker, or use 'make risk' to run without containerization."
+      exit 1
+    fi
+
+    if ! docker image inspect "$IMAGE_NAME" >/dev/null 2>&1; then
+      echo "Building Docker image '$IMAGE_NAME'..."
+      docker build -t "$IMAGE_NAME" "$ROOT_DIR"
+    fi
+
+    docker run --rm -it \
+      -v "$ROOT_DIR:/workspace" \
+      -v "$DEFAULT_CONFIG:/run/pith/config.yaml:ro" \
+      -e PITH_CONFIG=/run/pith/config.yaml \
+      -w /workspace \
+      "$IMAGE_NAME"
+    ;;
+  risk)
+    if ! command -v uv >/dev/null 2>&1; then
+      echo "uv is required for 'make risk'. Install uv and retry."
+      exit 1
+    fi
+
+    cd "$ROOT_DIR"
+    uv sync
+    uv run pith run
+    ;;
+  *)
+    echo "$USAGE"
+    exit 1
+    ;;
+esac
