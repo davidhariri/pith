@@ -159,6 +159,22 @@ class Storage:
         """)
         await conn.commit()
 
+    async def _fetchone(self, query: str, params: tuple[Any, ...] = ()) -> aiosqlite.Row | None:
+        conn = await self.connect()
+        cursor = await conn.execute(query, params)
+        try:
+            return await cursor.fetchone()
+        finally:
+            await cursor.close()
+
+    async def _fetchall(self, query: str, params: tuple[Any, ...] = ()) -> list[aiosqlite.Row]:
+        conn = await self.connect()
+        cursor = await conn.execute(query, params)
+        try:
+            return await cursor.fetchall()
+        finally:
+            await cursor.close()
+
     async def close(self) -> None:
         if self._conn is not None:
             await self._conn.close()
@@ -187,8 +203,7 @@ class Storage:
         await conn.commit()
 
     async def get_app_state(self, key: str, default: str | None = None) -> str | None:
-        conn = await self.connect()
-        row = await conn.execute_fetchone("SELECT value FROM app_state WHERE key=?", (key,))
+        row = await self._fetchone("SELECT value FROM app_state WHERE key=?", (key,))
         return row[0] if row else default
 
     async def set_profile(self, profile_type: str, values: dict[str, str]) -> None:
@@ -203,8 +218,7 @@ class Storage:
         await conn.commit()
 
     async def get_profile(self, profile_type: str) -> dict[str, str]:
-        conn = await self.connect()
-        rows = await conn.execute_fetchall(
+        rows = await self._fetchall(
             "SELECT key, value FROM profiles WHERE profile_type=? ORDER BY key",
             (profile_type,),
         )
@@ -233,7 +247,7 @@ class Storage:
 
     async def ensure_active_session(self) -> str:
         conn = await self.connect()
-        row = await conn.execute_fetchone("SELECT value FROM app_state WHERE key='active_session_id'")
+        row = await self._fetchone("SELECT value FROM app_state WHERE key='active_session_id'")
         if row:
             return str(row[0])
 
@@ -275,8 +289,7 @@ class Storage:
         return int(cur.lastrowid)
 
     async def get_recent_messages(self, session_id: str, limit: int) -> list[Message]:
-        conn = await self.connect()
-        rows = await conn.execute_fetchall(
+        rows = await self._fetchall(
             """
             SELECT role, content, created_at, metadata
             FROM messages
@@ -299,7 +312,7 @@ class Storage:
 
     async def compact_session(self, session_id: str, keep_recent: int = 50) -> None:
         conn = await self.connect()
-        count_rows = await conn.execute_fetchone(
+        count_rows = await self._fetchone(
             "SELECT COUNT(*) FROM messages WHERE session_id=?",
             (session_id,),
         )
@@ -311,7 +324,7 @@ class Storage:
         if surplus <= 0:
             return
 
-        rows = await conn.execute_fetchall(
+        rows = await self._fetchall(
             """
             SELECT id, role, content
             FROM messages
@@ -331,8 +344,7 @@ class Storage:
         await conn.commit()
 
     async def list_session_summaries(self, session_id: str) -> list[str]:
-        conn = await self.connect()
-        rows = await conn.execute_fetchall(
+        rows = await self._fetchall(
             "SELECT summary FROM session_summaries WHERE session_id=? ORDER BY id ASC",
             (session_id,),
         )
@@ -352,7 +364,7 @@ class Storage:
         conn = await self.connect()
 
         try:
-            rows = await conn.execute_fetchall(
+            rows = await self._fetchall(
                 """
                 SELECT m.id, m.content, m.kind, m.tags, m.source, m.created_at, m.updated_at
                 FROM memory_fts f
@@ -364,7 +376,7 @@ class Storage:
                 (query, limit),
             )
         except sqlite3.OperationalError:
-            rows = await conn.execute_fetchall(
+            rows = await self._fetchall(
                 """
                 SELECT id, content, kind, tags, source, created_at, updated_at
                 FROM memory_entries
