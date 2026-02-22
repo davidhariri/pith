@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import sys
 
 from prompt_toolkit import PromptSession
@@ -25,27 +26,65 @@ _slash_completer = WordCompleter(
     sentence=True,
 )
 
+_SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+
 
 async def _send(runtime: Runtime, message: str, session_id: str) -> bool:
     """Send a message and stream the response to stdout. Returns True on success."""
+    started = False
+    spinner_task: asyncio.Task[None] | None = None
+
+    async def _spin() -> None:
+        """Show a thinking spinner until the first token arrives."""
+        i = 0
+        while True:
+            frame = _SPINNER_FRAMES[i % len(_SPINNER_FRAMES)]
+            sys.stdout.write(f"\r\033[2m{frame}\033[0m")
+            sys.stdout.flush()
+            i += 1
+            await asyncio.sleep(0.08)
 
     def on_text(delta: str) -> None:
+        nonlocal started, spinner_task
+        if not started:
+            started = True
+            if spinner_task:
+                spinner_task.cancel()
+            # Clear the spinner line
+            sys.stdout.write("\r\033[K")
+            sys.stdout.flush()
         sys.stdout.write(delta)
         sys.stdout.flush()
 
     def on_tool(name: str) -> None:
+        nonlocal started, spinner_task
+        if not started:
+            started = True
+            if spinner_task:
+                spinner_task.cancel()
+            sys.stdout.write("\r\033[K")
+            sys.stdout.flush()
         console.print(f"[yellow]\\[tool][/yellow] {name}")
 
     try:
+        spinner_task = asyncio.create_task(_spin())
         await runtime.chat(
             message,
             session_id=session_id,
             on_text=on_text,
             on_tool=on_tool,
         )
+        if spinner_task and not spinner_task.done():
+            spinner_task.cancel()
+            sys.stdout.write("\r\033[K")
+            sys.stdout.flush()
         print()
         return True
     except Exception as exc:
+        if spinner_task and not spinner_task.done():
+            spinner_task.cancel()
+            sys.stdout.write("\r\033[K")
+            sys.stdout.flush()
         msg = str(exc)
         if "401" in msg or "AuthenticationError" in type(exc).__name__:
             console.print("\n[red]error:[/red] invalid API key — run `pith setup` to reconfigure")
