@@ -10,7 +10,7 @@ from pathlib import Path
 import yaml
 
 from .chat import run_chat
-from .config import DEFAULT_CONFIG_PATH, ConfigLoadResult, load_config
+from .config import ConfigLoadResult, default_config_path, load_config
 from .extensions import ExtensionRegistry
 from .mcp_client import MCPClient
 from .runtime import Runtime
@@ -21,59 +21,99 @@ def _load_runtime() -> Runtime:
     cfg_result: ConfigLoadResult = load_config()
     storage = Storage(cfg_result.config.runtime.memory_db_path)
     extensions = ExtensionRegistry(Path(cfg_result.config.runtime.workspace_path))
-    mcp_client = MCPClient(Path(cfg_result.config.runtime.workspace_path), cfg_result.config.mcp_servers)
+    mcp_client = MCPClient(
+        Path(cfg_result.config.runtime.workspace_path), cfg_result.config.mcp_servers
+    )
     return Runtime(cfg_result.config, storage, extensions, mcp_client)
 
 
-def _default_config_text() -> str:
-    return yaml.safe_dump(
-        {
-            "version": 1,
-            "runtime": {
-                "workspace_path": str(Path.cwd()),
-                "memory_db_path": str(Path.cwd() / "memory.db"),
-                "log_dir": str(Path.cwd() / ".pith" / "logs"),
-            },
-            "model": {
-                "provider": "openai",
-                "model": "gpt-5",
-                "api_key_env": "OPENAI_API_KEY",
-                "temperature": 0.2,
-            },
-            "telegram": {
-                "transport": "polling",
-                "bot_token_env": "TELEGRAM_BOT_TOKEN",
-            },
-            "mcp": {
-                "servers": {
-                    "filesystem": {
-                        "transport": "stdio",
-                        "command": "npx",
-                        "args": ["-y", "@modelcontextprotocol/server-filesystem", "."],
-                    }
-                }
-            },
-        },
-        sort_keys=False,
-    )
+# -- Provider presets --
+
+_PROVIDER_PRESETS: dict[str, dict[str, str]] = {
+    "anthropic": {"model": "claude-sonnet-4-20250514", "api_key_env": "ANTHROPIC_API_KEY"},
+    "openai": {"model": "gpt-4o", "api_key_env": "OPENAI_API_KEY"},
+}
+
+
+def _ask(prompt: str, default: str = "") -> str:
+    suffix = f" [{default}]" if default else ""
+    value = input(f"{prompt}{suffix}: ").strip()
+    return value or default
 
 
 async def cmd_setup(_: argparse.Namespace) -> None:
-    config_path = Path(os.environ.get("PITH_CONFIG", str(DEFAULT_CONFIG_PATH))).expanduser()
+    config_path = Path(os.environ.get("PITH_CONFIG", str(default_config_path()))).expanduser()
     workspace = Path.cwd()
     env_path = workspace / ".env"
 
+    print("pith setup\n")
+
+    # Provider
+    provider = _ask("Model provider (anthropic/openai/other)", "anthropic")
+    preset = _PROVIDER_PRESETS.get(provider, {})
+
+    # Model name
+    default_model = preset.get("model", "")
+    model_name = _ask("Model name", default_model)
+
+    # API key env var
+    default_key_env = preset.get("api_key_env", "API_KEY")
+    api_key_env = _ask("API key env var name", default_key_env)
+
+    # API key value
+    api_key_value = _ask("API key value (or leave blank to set later in .env)", "")
+
+    # Telegram
+    enable_telegram = _ask("Enable Telegram? (y/n)", "n").lower().startswith("y")
+    telegram_token = ""
+    if enable_telegram:
+        telegram_token = _ask("Telegram bot token (or leave blank for later)", "")
+
+    # Build config
+    config_data: dict = {
+        "version": 1,
+        "runtime": {
+            "workspace_path": str(workspace),
+            "memory_db_path": str(workspace / "memory.db"),
+            "log_dir": str(workspace / ".pith" / "logs"),
+        },
+        "model": {
+            "provider": provider,
+            "model": model_name,
+            "api_key_env": api_key_env,
+            "temperature": 0.2,
+        },
+    }
+
+    if enable_telegram:
+        config_data["telegram"] = {
+            "transport": "polling",
+            "bot_token_env": "TELEGRAM_BOT_TOKEN",
+        }
+
+    # Write config
     config_path.parent.mkdir(parents=True, exist_ok=True)
-    if not config_path.exists():
-        config_text = _default_config_text().replace(str(Path.cwd()), str(workspace))
-        config_path.write_text(config_text, encoding="utf-8")
+    config_path.write_text(yaml.safe_dump(config_data, sort_keys=False), encoding="utf-8")
 
-    if not env_path.exists():
-        env_path.write_text("OPENAI_API_KEY=\nTELEGRAM_BOT_TOKEN=\n", encoding="utf-8")
+    # Write .env
+    env_lines: list[str] = []
+    if api_key_value:
+        env_lines.append(f"{api_key_env}={api_key_value}")
+    else:
+        env_lines.append(f"{api_key_env}=")
+    if enable_telegram:
+        if telegram_token:
+            env_lines.append(f"TELEGRAM_BOT_TOKEN={telegram_token}")
+        else:
+            env_lines.append("TELEGRAM_BOT_TOKEN=")
+    env_lines.append("")  # trailing newline
 
-    print(f"wrote config: {config_path}")
-    print(f"wrote env template: {env_path}")
-    print("edit these values before running pith")
+    env_path.write_text("\n".join(env_lines), encoding="utf-8")
+
+    print(f"\nwrote config: {config_path}")
+    print(f"wrote .env: {env_path}")
+    if not api_key_value:
+        print(f"next: set {api_key_env} in .env before running pith")
 
 
 async def cmd_run(_: argparse.Namespace) -> None:
@@ -148,7 +188,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="pith")
     sub = parser.add_subparsers(dest="command", required=True)
 
-    sub.add_parser("setup", help="Create starter config and env files")
+    sub.add_parser("setup", help="Interactive setup wizard")
     sub.add_parser("run", help="Run service loop (telegram optional)")
     sub.add_parser("chat", help="Interactive streaming terminal chat")
     sub.add_parser("doctor", help="Show runtime status")

@@ -8,8 +8,8 @@ dependencies = [
   "aiosqlite",
   "httpx",
   "pydantic-ai",
+  "prompt-toolkit",
   "PyYAML",
-  "uvicorn",
 ]
 
 [dependency-groups]

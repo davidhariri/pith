@@ -6,10 +6,11 @@ import asyncio
 import importlib.util
 import inspect
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from types import ModuleType
-from typing import Any, Callable
+from typing import Any
 
 from .constants import RESERVED_TOOL_PREFIX
 
@@ -58,12 +59,14 @@ class ExtensionRegistry:
                 continue
             name = file.stem
             if name.startswith(RESERVED_TOOL_PREFIX):
-                raise ExtensionError(f"extension tool {name} uses reserved MCP prefix '{RESERVED_TOOL_PREFIX}'")
+                raise ExtensionError(
+                    f"extension tool {name} uses reserved MCP prefix '{RESERVED_TOOL_PREFIX}'"
+                )
 
             module = await self._load_module(file)
             if not hasattr(module, "run"):
                 continue
-            fn = getattr(module, "run")
+            fn = module.run
             if not callable(fn):
                 raise ExtensionError(f"tool {name} has non-callable run()")
             doc = inspect.getdoc(fn) or ""
@@ -87,9 +90,9 @@ class ExtensionRegistry:
             out[name] = ExtensionChannel(
                 name=name,
                 module_path=file,
-                connect=getattr(module, "connect"),
-                recv=getattr(module, "recv"),
-                send=getattr(module, "send"),
+                connect=module.connect,
+                recv=module.recv,
+                send=module.send,
             )
 
         return out

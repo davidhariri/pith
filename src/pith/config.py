@@ -10,9 +10,12 @@ from typing import Any
 
 import yaml
 
-from .constants import DEFAULT_CONFIG_PATH
-
 _ENV_VAR_RE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
+
+
+def default_config_path() -> Path:
+    """Return the default config path, evaluated lazily."""
+    return Path.cwd() / "config.yaml"
 
 
 @dataclass
@@ -25,9 +28,9 @@ class RuntimeConfig:
 
 @dataclass
 class ModelConfig:
-    provider: str = "openai"
-    model: str = "gpt-5"
-    api_key_env: str = "OPENAI_API_KEY"
+    provider: str
+    model: str
+    api_key_env: str
     base_url: str | None = None
     temperature: float = 0.2
 
@@ -77,12 +80,6 @@ def _resolve_env_vars(value: Any) -> Any:
     return value
 
 
-def _to_dict(data: dict[str, Any], default: dict[str, Any]) -> dict[str, Any]:
-    out: dict[str, Any] = default.copy()
-    out.update(data)
-    return out
-
-
 def _load_workspace_env(env_path: Path) -> None:
     if not env_path.exists():
         return
@@ -114,22 +111,29 @@ def _parse_runtime(raw: dict[str, Any], workspace_root: Path) -> RuntimeConfig:
     workspace_path = Path(runtime.get("workspace_path", str(workspace_root)))
     memory_db_path = str(runtime.get("memory_db_path", str(workspace_path / "memory.db")))
     log_dir = str(runtime.get("log_dir", str(workspace_path / ".pith" / "logs")))
-    return RuntimeConfig(workspace_path=workspace_path, memory_db_path=memory_db_path, log_dir=log_dir)
+    return RuntimeConfig(
+        workspace_path=workspace_path,
+        memory_db_path=memory_db_path,
+        log_dir=log_dir,
+    )
 
 
 def _parse_model(raw: dict[str, Any]) -> ModelConfig:
-    model = _to_dict(raw.get("model", {}), {"provider": "openai", "model": "gpt-5", "api_key_env": "OPENAI_API_KEY", "base_url": None, "temperature": 0.2})
+    model_raw = raw.get("model", {})
+    for required in ("provider", "model", "api_key_env"):
+        if required not in model_raw:
+            raise ValueError(f"model.{required} is required in config.yaml")
     return ModelConfig(
-        provider=str(model.get("provider", "openai")),
-        model=str(model.get("model", "gpt-5")),
-        api_key_env=str(model.get("api_key_env", "OPENAI_API_KEY")),
-        base_url=model.get("base_url"),
-        temperature=float(model.get("temperature", 0.2)),
+        provider=str(model_raw["provider"]),
+        model=str(model_raw["model"]),
+        api_key_env=str(model_raw["api_key_env"]),
+        base_url=model_raw.get("base_url"),
+        temperature=float(model_raw.get("temperature", 0.2)),
     )
 
 
 def _parse_telegram(raw: dict[str, Any]) -> TelegramConfig:
-    telegram = _to_dict(raw.get("telegram", {}), {"transport": "polling", "bot_token_env": "TELEGRAM_BOT_TOKEN"})
+    telegram = raw.get("telegram", {})
     return TelegramConfig(
         transport=str(telegram.get("transport", "polling")),
         bot_token_env=str(telegram.get("bot_token_env", "TELEGRAM_BOT_TOKEN")),
@@ -154,12 +158,14 @@ def _parse_mcp_servers(raw: dict[str, Any]) -> dict[str, MCPServerConfig]:
     return out
 
 
-def load_config(config_path: Path | None = None, workspace_root: Path | None = None) -> ConfigLoadResult:
+def load_config(
+    config_path: Path | None = None, workspace_root: Path | None = None
+) -> ConfigLoadResult:
     if workspace_root is None:
         workspace_root = Path.cwd()
     _load_workspace_env(workspace_root / ".env")
 
-    path = config_path or Path(os.environ.get("PITH_CONFIG", DEFAULT_CONFIG_PATH))
+    path = config_path or Path(os.environ.get("PITH_CONFIG", str(default_config_path())))
 
     raw = _load_yaml(path)
     version = int(raw.get("version", 1))
@@ -169,4 +175,13 @@ def load_config(config_path: Path | None = None, workspace_root: Path | None = N
     telegram = _parse_telegram(raw)
     mcp_servers = _parse_mcp_servers(raw.get("mcp", {}).get("servers", {}))
 
-    return ConfigLoadResult(path=path, config=Config(version=version, runtime=runtime, model=model, telegram=telegram, mcp_servers=mcp_servers))
+    return ConfigLoadResult(
+        path=path,
+        config=Config(
+            version=version,
+            runtime=runtime,
+            model=model,
+            telegram=telegram,
+            mcp_servers=mcp_servers,
+        ),
+    )

@@ -2,23 +2,16 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
 import json
 import sqlite3
+from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 import aiosqlite
-
-
-@dataclass
-class Message:
-    role: str
-    content: str
-    created_at: str
-    metadata: dict[str, Any] | None = None
+from pydantic_ai.messages import ModelMessage, ModelMessagesTypeAdapter
 
 
 @dataclass
@@ -38,7 +31,7 @@ class Storage:
         self.log_path = log_path
         self._conn: aiosqlite.Connection | None = None
 
-    async def __aenter__(self) -> "Storage":
+    async def __aenter__(self) -> Storage:
         await self.connect()
         await self.ensure_schema()
         return self
@@ -86,9 +79,7 @@ class Storage:
         CREATE TABLE IF NOT EXISTS messages(
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             session_id TEXT NOT NULL,
-            role TEXT NOT NULL,
-            content TEXT NOT NULL,
-            metadata TEXT,
+            message_json TEXT NOT NULL,
             created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
             FOREIGN KEY(session_id) REFERENCES sessions(id) ON DELETE CASCADE
         )
@@ -137,25 +128,8 @@ class Storage:
         END;
         """)
         await conn.execute("""
-        CREATE TABLE IF NOT EXISTS extension_tools(
-            name TEXT PRIMARY KEY,
-            module_path TEXT NOT NULL,
-            kind TEXT NOT NULL CHECK(kind IN ('tool','mcp')),
-            source TEXT NOT NULL,
-            registered_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
-        )
-        """)
-        await conn.execute("""
-        CREATE TABLE IF NOT EXISTS audit_log(
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            ts TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
-            event TEXT NOT NULL,
-            level TEXT NOT NULL DEFAULT 'info',
-            payload TEXT
-        )
-        """)
-        await conn.execute("""
-        CREATE INDEX IF NOT EXISTS idx_messages_session_created ON messages(session_id, created_at)
+        CREATE INDEX IF NOT EXISTS idx_messages_session_created
+        ON messages(session_id, created_at)
         """)
         await conn.commit()
 
@@ -180,24 +154,30 @@ class Storage:
             await self._conn.close()
             self._conn = None
 
-    async def log_event(self, event: str, level: str = "info", payload: dict[str, Any] | None = None) -> None:
-        conn = await self.connect()
-        payload_text = json.dumps(payload or {})
-        await conn.execute(
-            "INSERT INTO audit_log(event, level, payload) VALUES(?,?,?)",
-            (event, level, payload_text),
-        )
-        await conn.commit()
-        if self.log_path is not None:
-            self.log_path.parent.mkdir(parents=True, exist_ok=True)
-            entry = {"event": event, "level": level, "payload": payload or {}, "ts": datetime.utcnow().isoformat() + "Z"}
-            with self.log_path.open("a", encoding="utf-8") as fp:
-                fp.write(json.dumps(entry) + "\n")
+    # -- Logging (JSONL only) --
+
+    async def log_event(
+        self, event: str, level: str = "info", payload: dict[str, Any] | None = None
+    ) -> None:
+        if self.log_path is None:
+            return
+        self.log_path.parent.mkdir(parents=True, exist_ok=True)
+        entry = {
+            "event": event,
+            "level": level,
+            "payload": payload or {},
+            "ts": datetime.now(UTC).isoformat(),
+        }
+        with self.log_path.open("a", encoding="utf-8") as fp:
+            fp.write(json.dumps(entry) + "\n")
+
+    # -- App state --
 
     async def set_app_state(self, key: str, value: str) -> None:
         conn = await self.connect()
         await conn.execute(
-            "INSERT INTO app_state(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            "INSERT INTO app_state(key,value) VALUES(?,?) "
+            "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
             (key, value),
         )
         await conn.commit()
@@ -206,15 +186,17 @@ class Storage:
         row = await self._fetchone("SELECT value FROM app_state WHERE key=?", (key,))
         return row[0] if row else default
 
-    async def set_profile(self, profile_type: str, values: dict[str, str]) -> None:
+    # -- Profiles --
+
+    async def set_profile(self, profile_type: str, key: str, value: str) -> None:
         conn = await self.connect()
-        updated = datetime.utcnow().isoformat() + "Z"
-        for key, value in values.items():
-            await conn.execute(
-                "INSERT INTO profiles(profile_type,key,value,updated_at) VALUES(?,?,?,?) "
-                "ON CONFLICT(profile_type,key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at",
-                (profile_type, key, value, updated),
-            )
+        updated = datetime.now(UTC).isoformat()
+        await conn.execute(
+            "INSERT INTO profiles(profile_type,key,value,updated_at) VALUES(?,?,?,?) "
+            "ON CONFLICT(profile_type,key) DO UPDATE SET "
+            "value=excluded.value, updated_at=excluded.updated_at",
+            (profile_type, key, value, updated),
+        )
         await conn.commit()
 
     async def get_profile(self, profile_type: str) -> dict[str, str]:
@@ -234,7 +216,7 @@ class Storage:
         required_agent = ("name", "nature")
         required_user = ("name",)
 
-        return all(agent.get(field) for field in required_agent) and all(user.get(field) for field in required_user)
+        return all(agent.get(f) for f in required_agent) and all(user.get(f) for f in required_user)
 
     async def set_bootstrap_complete(self, value: bool) -> None:
         await self.set_app_state("bootstrap_complete", "1" if value else "0")
@@ -245,13 +227,16 @@ class Storage:
             "user": await self.get_profile("user"),
         }
 
+    # -- Sessions --
+
     async def ensure_active_session(self) -> str:
         conn = await self.connect()
         row = await self._fetchone("SELECT value FROM app_state WHERE key='active_session_id'")
         if row:
             return str(row[0])
 
-        session_id = datetime.utcnow().strftime("%Y%m%dT%H%M%S") + "." + str(int(datetime.utcnow().timestamp()))
+        now = datetime.now(UTC)
+        session_id = now.strftime("%Y%m%dT%H%M%S") + "." + str(int(now.timestamp()))
         await conn.execute("INSERT INTO sessions(id) VALUES(?)", (session_id,))
         await conn.execute(
             "INSERT INTO app_state(key,value) VALUES('active_session_id',?)",
@@ -264,7 +249,8 @@ class Storage:
         await self.set_app_state("active_session_id", session_id)
 
     async def new_session(self) -> str:
-        session_id = datetime.utcnow().strftime("%Y%m%dT%H%M%S") + "." + str(int(datetime.utcnow().timestamp()))
+        now = datetime.now(UTC)
+        session_id = now.strftime("%Y%m%dT%H%M%S") + "." + str(int(now.timestamp()))
         conn = await self.connect()
         await conn.execute("INSERT INTO sessions(id) VALUES(?)", (session_id,))
         await conn.execute(
@@ -275,23 +261,27 @@ class Storage:
         await conn.commit()
         return session_id
 
-    async def add_message(self, session_id: str, role: str, content: str, metadata: dict[str, Any] | None = None) -> int:
+    # -- Messages (ModelMessage serialization) --
+
+    async def append_messages(self, session_id: str, messages: list[ModelMessage]) -> None:
         conn = await self.connect()
-        cur = await conn.execute(
-            "INSERT INTO messages(session_id, role, content, metadata) VALUES(?,?,?,?)",
-            (session_id, role, content, json.dumps(metadata or {})),
-        )
+        adapter = ModelMessagesTypeAdapter
+        for msg in messages:
+            serialized = json.dumps(adapter.dump_python([msg], mode="json")[0])
+            await conn.execute(
+                "INSERT INTO messages(session_id, message_json) VALUES(?,?)",
+                (session_id, serialized),
+            )
         await conn.execute(
             "UPDATE sessions SET updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=?",
             (session_id,),
         )
         await conn.commit()
-        return int(cur.lastrowid)
 
-    async def get_recent_messages(self, session_id: str, limit: int) -> list[Message]:
+    async def get_message_history(self, session_id: str, limit: int = 20) -> list[ModelMessage]:
         rows = await self._fetchall(
             """
-            SELECT role, content, created_at, metadata
+            SELECT message_json
             FROM messages
             WHERE session_id = ?
             ORDER BY id DESC
@@ -299,24 +289,19 @@ class Storage:
             """,
             (session_id, limit),
         )
-        rows = rows[::-1]
-        return [
-            Message(
-                role=row[0],
-                content=row[1],
-                created_at=row[2],
-                metadata=json.loads(row[3] or "{}"),
-            )
-            for row in rows
-        ]
+        rows = rows[::-1]  # chronological order
+        raw_list = [json.loads(row[0]) for row in rows]
+        return ModelMessagesTypeAdapter.validate_python(raw_list)
+
+    # -- Compaction --
 
     async def compact_session(self, session_id: str, keep_recent: int = 50) -> None:
         conn = await self.connect()
-        count_rows = await self._fetchone(
+        count_row = await self._fetchone(
             "SELECT COUNT(*) FROM messages WHERE session_id=?",
             (session_id,),
         )
-        total = int(count_rows[0] if count_rows else 0)
+        total = int(count_row[0] if count_row else 0)
         if total <= keep_recent:
             return
 
@@ -326,7 +311,7 @@ class Storage:
 
         rows = await self._fetchall(
             """
-            SELECT id, role, content
+            SELECT id, message_json
             FROM messages
             WHERE session_id=?
             ORDER BY id ASC
@@ -335,12 +320,17 @@ class Storage:
             (session_id, surplus),
         )
 
-        summary_parts: list[str] = [f"[{r[1]}] {r[2]}" for r in rows]
+        summary_parts: list[str] = [str(r[1])[:200] for r in rows]
         summary = "\n".join(summary_parts)
-        await conn.execute("INSERT INTO session_summaries(session_id, summary) VALUES(?, ?)", (session_id, summary))
+        await conn.execute(
+            "INSERT INTO session_summaries(session_id, summary) VALUES(?, ?)",
+            (session_id, summary),
+        )
 
         oldest = rows[-1][0]
-        await conn.execute("DELETE FROM messages WHERE session_id=? AND id<=?", (session_id, oldest))
+        await conn.execute(
+            "DELETE FROM messages WHERE session_id=? AND id<=?", (session_id, oldest)
+        )
         await conn.commit()
 
     async def list_session_summaries(self, session_id: str) -> list[str]:
@@ -350,7 +340,15 @@ class Storage:
         )
         return [str(row[0]) for row in rows]
 
-    async def memory_save(self, content: str, kind: str = "durable", tags: Iterable[str] | None = None, source: str = "runtime") -> int:
+    # -- Memory (FTS5) --
+
+    async def memory_save(
+        self,
+        content: str,
+        kind: str = "durable",
+        tags: Iterable[str] | None = None,
+        source: str = "runtime",
+    ) -> int:
         conn = await self.connect()
         normalized_tags = ",".join(tags or ())
         cur = await conn.execute(
@@ -361,8 +359,6 @@ class Storage:
         return int(cur.lastrowid)
 
     async def memory_search(self, query: str, limit: int = 8) -> list[MemoryEntry]:
-        conn = await self.connect()
-
         try:
             rows = await self._fetchall(
                 """
@@ -399,12 +395,3 @@ class Storage:
             )
             for row in rows
         ]
-
-    async def register_tool(self, name: str, module_path: str, kind: str, source: str) -> None:
-        conn = await self.connect()
-        await conn.execute(
-            "INSERT INTO extension_tools(name, module_path, kind, source) VALUES(?,?,?,?) "
-            "ON CONFLICT(name) DO UPDATE SET module_path=excluded.module_path, kind=excluded.kind, source=excluded.source",
-            (name, module_path, kind, source),
-        )
-        await conn.commit()

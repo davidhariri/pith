@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from typing import Any
 
 import httpx
@@ -12,7 +13,7 @@ from ..runtime import Runtime
 
 async def run_telegram(runtime: Runtime) -> None:
     cfg = runtime.cfg.telegram
-    token = __import__("os").environ.get(cfg.bot_token_env)
+    token = os.environ.get(cfg.bot_token_env)
     if not token:
         print(f"telegram token not set in {cfg.bot_token_env}")
         return
@@ -58,7 +59,7 @@ async def run_telegram(runtime: Runtime) -> None:
                     continue
 
             session_id = await runtime.storage.ensure_active_session()
-            reply = await runtime.chat(text, session_id=session_id, stream=False)
+            reply = await runtime.chat(text, session_id=session_id)
             await send_message(client, message["chat"]["id"], reply)
 
         await asyncio.sleep(0.25)

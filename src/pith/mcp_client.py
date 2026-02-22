@@ -9,8 +9,8 @@ from typing import Any
 
 import httpx
 
-from .constants import DEFAULT_MCP_PREFIX
 from .config import MCPServerConfig
+from .constants import DEFAULT_MCP_PREFIX
 
 
 @dataclass
@@ -38,13 +38,18 @@ class MCPClient:
             try:
                 tool_names = await self._discover_tools(server_name, server_cfg)
             except Exception as exc:
-                warning = f"MCP server '{server_name}' unavailable during startup: {type(exc).__name__}: {exc}"
+                warning = (
+                    f"MCP server '{server_name}' unavailable during startup: "
+                    f"{type(exc).__name__}: {exc}"
+                )
                 self.discovery_warnings.append(warning)
                 continue
 
             for tool_name in tool_names:
                 fq = f"{DEFAULT_MCP_PREFIX}{server_name}__{tool_name}"
-                self.known_tools[fq] = MCPTool(name=tool_name, server=server_name, source=server_name)
+                self.known_tools[fq] = MCPTool(
+                    name=tool_name, server=server_name, source=server_name
+                )
 
     async def _discover_tools(self, server_name: str, server_cfg: MCPServerConfig) -> list[str]:
         if server_cfg.tools:
@@ -59,11 +64,15 @@ class MCPClient:
                 "method": "tools/list",
             }
             async with httpx.AsyncClient(timeout=20) as client:
-                response = await client.post(server_cfg.url, json=payload, headers=server_cfg.headers or {})
+                response = await client.post(
+                    server_cfg.url, json=payload, headers=server_cfg.headers or {}
+                )
                 response.raise_for_status()
                 data = response.json()
             result = data.get("result", {})
-            return [t["name"] for t in result.get("tools", []) if isinstance(t, dict) and t.get("name")]
+            return [
+                t["name"] for t in result.get("tools", []) if isinstance(t, dict) and t.get("name")
+            ]
 
         return []
 
@@ -89,7 +98,9 @@ class MCPClient:
                 },
             }
             async with httpx.AsyncClient(timeout=60) as client:
-                response = await client.post(server_cfg.url, json=payload, headers=server_cfg.headers or {})
+                response = await client.post(
+                    server_cfg.url, json=payload, headers=server_cfg.headers or {}
+                )
                 response.raise_for_status()
                 data = response.json()
             return self._extract_mcp_result(data)

@@ -1616,9 +1616,9 @@ source = { editable = "." }
 dependencies = [
     { name = "aiosqlite" },
     { name = "httpx" },
+    { name = "prompt-toolkit" },
     { name = "pydantic-ai" },
     { name = "pyyaml" },
-    { name = "uvicorn" },
 ]
 
 [package.dev-dependencies]
@@ -1632,9 +1632,9 @@ dev = [
 requires-dist = [
     { name = "aiosqlite" },
     { name = "httpx" },
+    { name = "prompt-toolkit" },
     { name = "pydantic-ai" },
     { name = "pyyaml" },
-    { name = "uvicorn" },
 ]
 
 [package.metadata.requires-dev]

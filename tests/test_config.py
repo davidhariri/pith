@@ -11,7 +11,9 @@ def test_load_config_with_env_substitution(tmp_path: Path, monkeypatch) -> None:
     config_path = workspace / "config.yaml"
     env_path = workspace / ".env"
 
-    env_path.write_text("OPENAI_API_KEY=abc123\nOPENAI_BASE_URL=https://example.test/v1\n", encoding="utf-8")
+    env_path.write_text(
+        "OPENAI_API_KEY=abc123\nOPENAI_BASE_URL=https://example.test/v1\n", encoding="utf-8"
+    )
     config_path.write_text(
         """
 version: 1
@@ -21,7 +23,7 @@ runtime:
   log_dir: ./.pith/logs
 model:
   provider: openai
-  model: gpt-5
+  model: gpt-4o
   api_key_env: OPENAI_API_KEY
   base_url: ${OPENAI_BASE_URL}
 telegram:
@@ -42,3 +44,23 @@ mcp:
     assert result.config.model.base_url == "https://example.test/v1"
     assert os.environ["OPENAI_API_KEY"] == "abc123"
     assert result.config.mcp_servers == {}
+
+
+def test_load_config_missing_model_fields(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        """
+version: 1
+runtime:
+  workspace_path: .
+  memory_db_path: ./memory.db
+  log_dir: ./.pith/logs
+model: {}
+""".strip(),
+        encoding="utf-8",
+    )
+
+    import pytest
+
+    with pytest.raises(ValueError, match="model.provider is required"):
+        load_config(config_path=config_path, workspace_root=tmp_path)
