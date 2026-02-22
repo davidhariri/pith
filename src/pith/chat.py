@@ -37,11 +37,10 @@ async def _send(runtime: Runtime, message: str, session_id: str) -> bool:
         return True
     except Exception as exc:
         msg = str(exc)
-        # Surface auth errors clearly
         if "401" in msg or "AuthenticationError" in type(exc).__name__:
             console.print("\n[red]error:[/red] invalid API key — run `pith setup` to reconfigure")
-        else:
-            console.print(f"\n[red]error:[/red] {type(exc).__name__}: {msg}")
+            raise SystemExit(1) from None
+        console.print(f"\n[red]error:[/red] {type(exc).__name__}: {msg}")
         return False
 
 
