@@ -6,7 +6,6 @@ ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 RED="\033[0;31m"
 GREEN="\033[0;32m"
-CYAN="\033[0;36m"
 RESET="\033[0m"
 
 USAGE="Usage: $0 <run|risk|update>"
@@ -29,104 +28,30 @@ fatal() {
   exit 1
 }
 
-source_env() {
-  [[ -f "$ENV_FILE" ]] || return 0
-  while IFS='=' read -r key value; do
-    key=$(echo "$key" | xargs)
-    [[ -z "$key" || "$key" == \#* ]] && continue
-    value=$(echo "$value" | xargs | sed -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'$//")
-    if [[ -n "$key" && -z "${!key:-}" ]]; then
-      export "$key=$value"
-    fi
-  done < "$ENV_FILE"
-}
-
-set_env_value() {
-  local key="$1" value="$2"
-  if [[ -f "$ENV_FILE" ]] && grep -q "^${key}=" "$ENV_FILE"; then
-    local tmp; tmp="$(mktemp)"
-    sed "s|^${key}=.*|${key}=${value}|" "$ENV_FILE" > "$tmp"
-    mv "$tmp" "$ENV_FILE"
-  else
-    echo "${key}=${value}" >> "$ENV_FILE"
-  fi
-}
-
-# Check if we have a working API key. Returns 0 if ready, 1 if not.
-check_api_key() {
-  [[ -f "$CONFIG_PATH" ]] || return 1
-
-  local key_env
-  key_env=$(grep 'api_key_env:' "$CONFIG_PATH" 2>/dev/null | head -1 | awk '{print $2}')
-  [[ -z "$key_env" ]] && return 1
-
-  source_env
-  local key_val="${!key_env:-}"
-  [[ -n "$key_val" ]] && return 0
-  return 1
-}
-
-# Interactive setup: provider, model, API key. Writes config.yaml and .env.
-run_setup() {
-  echo -e "${CYAN}pith setup${RESET}\n"
-
-  read -r -p "Model provider (anthropic/openai) [anthropic]: " provider
-  provider="${provider:-anthropic}"
-
-  case "$provider" in
-    anthropic) default_model="claude-sonnet-4-20250514"; default_key_env="ANTHROPIC_API_KEY" ;;
-    openai)    default_model="gpt-4o";                   default_key_env="OPENAI_API_KEY" ;;
-    *)         default_model="";                         default_key_env="API_KEY" ;;
-  esac
-
-  read -r -p "Model name [$default_model]: " model_name
-  model_name="${model_name:-$default_model}"
-
-  read -r -p "API key env var [$default_key_env]: " api_key_env
-  api_key_env="${api_key_env:-$default_key_env}"
-
-  read -r -p "API key: " api_key_value
-  if [[ -z "$api_key_value" ]]; then
-    fatal "API key is required." "Cannot start without a model API key."
-  fi
-
-  cat > "$CONFIG_PATH" <<YAML
-version: 1
-
-runtime:
-  workspace_path: /workspace
-  memory_db_path: /workspace/memory.db
-  log_dir: /workspace/.pith/logs
-
-model:
-  provider: $provider
-  model: $model_name
-  api_key_env: $api_key_env
-  temperature: 0.2
-YAML
-
-  # Reset .env with just the key
-  echo "$api_key_env=$api_key_value" > "$ENV_FILE"
-  export "$api_key_env=$api_key_value"
-
-  echo ""
-  echo "wrote $CONFIG_PATH"
-  echo "wrote $ENV_FILE"
-  echo ""
-}
-
-# Ensure we're ready to start. Run setup if anything is missing.
+# Run pith setup locally if config or API key is missing
 ensure_configured() {
-  if check_api_key; then
-    source_env
-    return
+  # Quick check: config exists and .env has a non-empty key value
+  if [[ -f "$CONFIG_PATH" && -f "$ENV_FILE" ]]; then
+    local key_env
+    key_env=$(grep 'api_key_env:' "$CONFIG_PATH" 2>/dev/null | head -1 | awk '{print $2}')
+    if [[ -n "$key_env" ]]; then
+      local key_val
+      key_val=$(grep "^${key_env}=" "$ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2-)
+      if [[ -n "$key_val" ]]; then
+        return 0
+      fi
+    fi
   fi
 
-  if [[ ! -t 0 ]]; then
-    fatal "pith is not configured." "Run 'make run' in an interactive terminal first."
+  # Need setup — run it locally via uv
+  if ! command -v uv >/dev/null 2>&1; then
+    fatal "uv is required for first-time setup." \
+      "Install uv from https://docs.astral.sh/uv/ then rerun: make run"
   fi
 
-  run_setup
+  cd "$ROOT_DIR"
+  uv sync --quiet 2>/dev/null || uv sync
+  uv run pith setup
 }
 
 case "$MODE" in

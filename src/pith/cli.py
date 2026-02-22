@@ -6,6 +6,8 @@ import argparse
 import asyncio
 import os
 import sys
+import termios
+import tty
 from pathlib import Path
 
 import yaml
@@ -28,17 +30,76 @@ def _load_runtime() -> Runtime:
     return Runtime(cfg_result.config, storage, extensions, mcp_client)
 
 
-# -- Provider presets --
+# -- Interactive helpers --
 
 _PROVIDER_PRESETS: dict[str, dict[str, str]] = {
-    "anthropic": {"model": "claude-sonnet-4-20250514", "api_key_env": "ANTHROPIC_API_KEY"},
-    "openai": {"model": "gpt-4o", "api_key_env": "OPENAI_API_KEY"},
+    "anthropic": {
+        "label": "Anthropic",
+        "model": "claude-sonnet-4-20250514",
+        "api_key_env": "ANTHROPIC_API_KEY",
+    },
+    "openai": {
+        "label": "OpenAI",
+        "model": "gpt-4o",
+        "api_key_env": "OPENAI_API_KEY",
+    },
 }
 
 
+def _select(prompt: str, options: list[tuple[str, str]], default: int = 0) -> str:
+    """Inline arrow-key selector. options = [(value, label), ...]. Returns value."""
+    fd = sys.stdin.fileno()
+    old_settings = termios.tcgetattr(fd)
+    selected = default
+
+    def render() -> None:
+        # Move cursor up to overwrite previous render (except first time)
+        for i, (_, label) in enumerate(options):
+            if i == selected:
+                sys.stdout.write(f"  \033[36m> {label}\033[0m\n")
+            else:
+                sys.stdout.write(f"    {label}\n")
+        sys.stdout.flush()
+
+    def clear() -> None:
+        for _ in options:
+            sys.stdout.write("\033[A\033[2K")
+        sys.stdout.flush()
+
+    sys.stdout.write(f"{prompt}\n")
+    render()
+
+    try:
+        tty.setraw(fd)
+        while True:
+            ch = sys.stdin.read(1)
+            if ch == "\r" or ch == "\n":
+                break
+            if ch == "\x03":  # ctrl-c
+                raise KeyboardInterrupt
+            if ch == "\x1b":
+                seq = sys.stdin.read(2)
+                if seq == "[A":  # up
+                    selected = (selected - 1) % len(options)
+                elif seq == "[B":  # down
+                    selected = (selected + 1) % len(options)
+                clear()
+                render()
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+
+    # Clear the selector and show the choice inline
+    clear()
+    _, label = options[selected]
+    sys.stdout.write(f"\033[A\033[2K{prompt} \033[36m{label}\033[0m\n")
+    sys.stdout.flush()
+
+    return options[selected][0]
+
+
 def _ask(prompt: str, default: str = "") -> str:
-    suffix = f" [{default}]" if default else ""
-    value = input(f"{prompt}{suffix}: ").strip()
+    suffix = f" \033[90m[{default}]\033[0m" if default else ""
+    value = input(f"{prompt}{suffix} ").strip()
     return value or default
 
 
@@ -46,19 +107,20 @@ def _is_interactive() -> bool:
     return sys.stdin.isatty()
 
 
+# -- Configuration bootstrap --
+
+
 def _ensure_configured() -> None:
     """Ensure config.yaml exists and API key is set. Prompt interactively if needed."""
     config_path = Path(os.environ.get("PITH_CONFIG", str(default_config_path())))
     env_path = Path.cwd() / ".env"
 
-    # No config.yaml — need setup
     if not config_path.exists():
         if not _is_interactive():
             raise SystemExit(
                 f"config not found at {config_path}\n"
-                "run `pith setup` to create one, or set PITH_CONFIG"
+                "run `pith setup` interactively first"
             )
-        print("no config found — running first-time setup\n")
         _run_setup(config_path, env_path)
         return
 
@@ -68,28 +130,19 @@ def _ensure_configured() -> None:
     api_key = os.environ.get(api_key_env, "").strip()
 
     if api_key:
-        return  # all good
+        return
 
     if not _is_interactive():
         raise SystemExit(
             f"API key not set: {api_key_env} is empty\n"
-            f"set it in .env or environment, then retry"
+            "run `pith setup` interactively first"
         )
 
-    print(f"{api_key_env} is not set\n")
-    key_value = _ask(f"Enter your API key ({api_key_env})")
-    if not key_value:
-        raise SystemExit("API key is required to run pith")
-
-    os.environ[api_key_env] = key_value
-
-    # Persist to .env so it survives restarts
-    _set_env_value(env_path, api_key_env, key_value)
-    print()
+    # Config exists but key is missing — run full setup
+    _run_setup(config_path, env_path)
 
 
 def _set_env_value(env_path: Path, key: str, value: str) -> None:
-    """Set a key=value in .env, creating or updating as needed."""
     lines: list[str] = []
     found = False
 
@@ -104,7 +157,7 @@ def _set_env_value(env_path: Path, key: str, value: str) -> None:
     if not found:
         lines.append(f"{key}={value}")
 
-    lines.append("")  # trailing newline
+    lines.append("")
     env_path.write_text("\n".join(lines), encoding="utf-8")
 
 
@@ -112,31 +165,23 @@ def _run_setup(config_path: Path, env_path: Path) -> None:
     """Interactive setup flow — creates config.yaml and .env."""
     workspace = Path.cwd()
 
-    # Provider
-    provider = _ask("Model provider (anthropic/openai/other)", "anthropic")
-    preset = _PROVIDER_PRESETS.get(provider, {})
+    print("\n\033[1mpith setup\033[0m\n")
+
+    # Provider selection
+    provider_options = [(k, v["label"]) for k, v in _PROVIDER_PRESETS.items()]
+    provider = _select("Model provider:", provider_options)
+    preset = _PROVIDER_PRESETS[provider]
 
     # Model name
-    default_model = preset.get("model", "")
-    model_name = _ask("Model name", default_model)
+    model_name = _ask("Model name:", preset["model"])
 
-    # API key env var
-    default_key_env = preset.get("api_key_env", "API_KEY")
-    api_key_env = _ask("API key env var name", default_key_env)
-
-    # API key value
-    api_key_value = _ask("API key value")
+    # API key
+    api_key_env = preset["api_key_env"]
+    api_key_value = _ask(f"API key ({api_key_env}):")
     if not api_key_value:
         raise SystemExit("API key is required to run pith")
 
-    # Set in current process so _load_runtime() works
     os.environ[api_key_env] = api_key_value
-
-    # Telegram
-    enable_telegram = _ask("Enable Telegram? (y/n)", "n").lower().startswith("y")
-    telegram_token = ""
-    if enable_telegram:
-        telegram_token = _ask("Telegram bot token (or leave blank for later)", "")
 
     # Build config
     config_data: dict = {
@@ -154,36 +199,23 @@ def _run_setup(config_path: Path, env_path: Path) -> None:
         },
     }
 
-    if enable_telegram:
-        config_data["telegram"] = {
-            "transport": "polling",
-            "bot_token_env": "TELEGRAM_BOT_TOKEN",
-        }
-
     # Write config
     config_path.parent.mkdir(parents=True, exist_ok=True)
     config_path.write_text(yaml.safe_dump(config_data, sort_keys=False), encoding="utf-8")
 
     # Write .env
-    env_lines: list[str] = [f"{api_key_env}={api_key_value}"]
-    if enable_telegram:
-        if telegram_token:
-            env_lines.append(f"TELEGRAM_BOT_TOKEN={telegram_token}")
-        else:
-            env_lines.append("TELEGRAM_BOT_TOKEN=")
-    env_lines.append("")  # trailing newline
+    env_path.write_text(f"{api_key_env}={api_key_value}\n", encoding="utf-8")
 
-    env_path.write_text("\n".join(env_lines), encoding="utf-8")
+    print(f"\n\033[32m✓\033[0m wrote {config_path}")
+    print(f"\033[32m✓\033[0m wrote {env_path}\n")
 
-    print(f"\nwrote config: {config_path}")
-    print(f"wrote .env: {env_path}")
-    print()
+
+# -- Commands --
 
 
 async def cmd_setup(_: argparse.Namespace) -> None:
     config_path = Path(os.environ.get("PITH_CONFIG", str(default_config_path()))).expanduser()
     env_path = Path.cwd() / ".env"
-    print("pith setup\n")
     _run_setup(config_path, env_path)
 
 
