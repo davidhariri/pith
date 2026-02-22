@@ -55,8 +55,9 @@ case "$MODE" in
       fatal "Docker is required for 'make run'." "Install Docker, or use 'make risk' to run without containerization."
     fi
 
-    if ! docker info >/dev/null 2>&1; then
-      fatal "Docker daemon is unavailable." "Start Docker (or install it), then rerun 'make run'."
+if ! docker info >/dev/null 2>&1; then
+      fatal "Docker is installed, but the Docker daemon isn't running." \
+        "Start Docker Desktop (or your local Docker service), then rerun: make run"
     fi
 
     if ! docker image inspect "$IMAGE_NAME" >/dev/null 2>&1; then
@@ -73,7 +74,8 @@ case "$MODE" in
     ;;
   risk)
     if ! command -v uv >/dev/null 2>&1; then
-      fatal "uv is required for 'make risk'." "Install uv (https://docs.astral.sh/uv/), then rerun 'make risk'."
+      fatal "uv is required for make risk." \
+        "Install uv from https://docs.astral.sh/uv/ then rerun: make risk"
     fi
 
     cd "$ROOT_DIR"
