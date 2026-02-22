@@ -184,7 +184,11 @@ async def _run_setup(config_path: Path, env_path: Path) -> None:
     env_path.write_text(f"{api_key_env}={api_key_value}\n", encoding="utf-8")
 
     console.print(f"\n[green]✓[/green] wrote {config_path}")
-    console.print(f"[green]✓[/green] wrote {env_path}\n")
+    console.print(f"[green]✓[/green] wrote {env_path}")
+    console.print("\n[bold]next steps:[/bold]")
+    console.print("  pith chat    start a conversation")
+    console.print("  pith run     start the service loop (telegram, etc.)")
+    console.print("  pith doctor  check configuration\n")
 
 
 # -- Commands --
