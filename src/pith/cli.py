@@ -84,13 +84,17 @@ async def cmd_run(_: argparse.Namespace) -> None:
         await runtime.initialize()
         token_env = runtime.cfg.telegram.bot_token_env
         if os.environ.get(token_env):
-            print("pith service running (telegram enabled)")
+            print("\033[0;32m[startup ok]\033[0m pith service started successfully")
+            print("transport: telegram enabled")
+            print("status: service loop active")
             await run_telegram(runtime)
             return
 
-        print("pith service running (telegram not configured; this is optional)")
-        print(f"set {token_env} in .env only if you want Telegram transport")
-        print("local interactive chat remains available via `pith chat`")
+        print("\033[0;32m[startup ok]\033[0m pith service started successfully")
+        print("transport: telegram disabled (optional)")
+        print(f"next step (optional): set {token_env} in .env to enable Telegram")
+        print("local chat: run `pith chat` in another terminal")
+        print("status: service loop active")
         await asyncio.Event().wait()
 
 

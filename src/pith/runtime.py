@@ -45,7 +45,7 @@ class Runtime:
         await self.extensions.refresh()
         await self.mcp_client.discover()
         for warning in self.mcp_client.discovery_warnings:
-            print(f"\033[0;33m[warn]\033[0m {warning}")
+            print(f"\033[0;33m[warn][non-fatal]\033[0m {warning}")
             await self.storage.log_event("mcp.discovery.warning", level="warning", payload={"message": warning})
         await self._ensure_bootstrap_state()
         self.log_dir.mkdir(parents=True, exist_ok=True)
