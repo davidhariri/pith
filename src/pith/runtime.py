@@ -12,6 +12,9 @@ from pydantic_ai import Agent
 from pydantic_ai._agent_graph import CallToolsNode, ModelRequestNode
 from pydantic_ai.messages import (
     ModelMessage,
+    PartDeltaEvent,
+    PartStartEvent,
+    TextPart,
     TextPartDelta,
 )
 
@@ -276,8 +279,20 @@ class Runtime:
                 if isinstance(node, ModelRequestNode):
                     async with node.stream(run.ctx) as stream:
                         async for event in stream:
-                            if isinstance(event, TextPartDelta):
-                                delta = event.content_delta
+                            is_start = (
+                                isinstance(event, PartStartEvent)
+                                and isinstance(event.part, TextPart)
+                            )
+                            is_delta = (
+                                isinstance(event, PartDeltaEvent)
+                                and isinstance(event.delta, TextPartDelta)
+                            )
+                            if is_start and event.part.content:
+                                full_text.append(event.part.content)
+                                if on_text:
+                                    on_text(event.part.content)
+                            elif is_delta:
+                                delta = event.delta.content_delta
                                 full_text.append(delta)
                                 if on_text:
                                     on_text(delta)
