@@ -150,9 +150,11 @@ async def _run_setup(config_path: Path, env_path: Path) -> None:
     if model_name is None:
         raise SystemExit("setup cancelled")
 
-    # API key
+    # API key — use getpass (no echo at all; password() floods terminal with asterisks)
+    import getpass
+
     api_key_env = preset["api_key_env"]
-    api_key_value = await questionary.password(f"API key ({api_key_env}):").ask_async()
+    api_key_value = getpass.getpass(f"  API key ({api_key_env}): ").strip()
     if not api_key_value:
         raise SystemExit("API key is required to run pith")
 
