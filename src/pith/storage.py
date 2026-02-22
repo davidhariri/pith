@@ -131,6 +131,24 @@ class Storage:
         CREATE INDEX IF NOT EXISTS idx_messages_session_created
         ON messages(session_id, created_at)
         """)
+
+        # Schema migration: drop tables with stale schemas (early-stage, no data to preserve)
+        for table, required_col in [("messages", "message_json")]:
+            cols = await self._fetchall(f"PRAGMA table_info({table})")
+            col_names = {row[1] for row in cols}
+            if cols and required_col not in col_names:
+                await conn.execute(f"DROP TABLE {table}")
+                await conn.execute("""
+                CREATE TABLE messages(
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    session_id TEXT NOT NULL,
+                    message_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                        DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+                    FOREIGN KEY(session_id) REFERENCES sessions(id) ON DELETE CASCADE
+                )
+                """)
+
         await conn.commit()
 
     async def _fetchone(self, query: str, params: tuple[Any, ...] = ()) -> aiosqlite.Row | None:
