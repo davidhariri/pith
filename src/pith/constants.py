@@ -4,9 +4,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from .config import ModelConfig
-
-DEFAULT_MODEL_CONFIG = ModelConfig()
 DEFAULT_CONFIG_DIR = Path.home() / ".config" / "pith"
 DEFAULT_CONFIG_PATH = DEFAULT_CONFIG_DIR / "config.yaml"
 DEFAULT_MCP_PREFIX = "MCP__"
