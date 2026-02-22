@@ -188,6 +188,7 @@ async def _run_setup(config_path: Path, env_path: Path) -> None:
     console.print("\n[bold]next steps:[/bold]")
     console.print("  pith chat    start a conversation")
     console.print("  pith run     start the service loop (telegram, etc.)")
+    console.print("  pith status  check if the service is running")
     console.print("  pith doctor  check configuration\n")
 
 
@@ -208,10 +209,11 @@ async def cmd_run(_: argparse.Namespace) -> None:
     async with runtime.storage:
         await runtime.initialize()
 
-        # Signal healthy startup (used by Docker HEALTHCHECK)
-        health_file = Path(runtime.workspace / ".pith" / "healthy")
-        health_file.parent.mkdir(parents=True, exist_ok=True)
-        health_file.touch()
+        # Signal healthy startup (used by Docker HEALTHCHECK and `pith status`)
+        pith_dir = runtime.workspace / ".pith"
+        pith_dir.mkdir(parents=True, exist_ok=True)
+        (pith_dir / "healthy").touch()
+        (pith_dir / "pid").write_text(str(os.getpid()), encoding="utf-8")
 
         token_env = runtime.cfg.telegram.bot_token_env
         if os.environ.get(token_env):
@@ -256,6 +258,31 @@ async def cmd_doctor(_: argparse.Namespace) -> None:
     console.print(f"MCP servers: {', '.join(cfg.mcp_servers.keys()) or 'none'}")
 
 
+async def cmd_status(_: argparse.Namespace) -> None:
+    cfg_result = load_config()
+    workspace = Path(cfg_result.config.runtime.workspace_path)
+    pith_dir = workspace / ".pith"
+    pid_file = pith_dir / "pid"
+    health_file = pith_dir / "healthy"
+
+    if not pid_file.exists() or not health_file.exists():
+        console.print("[red]stopped[/red]  no running service found")
+        console.print("  run `pith run` to start the service")
+        return
+
+    pid = int(pid_file.read_text().strip())
+    try:
+        os.kill(pid, 0)  # check if process exists (signal 0 = no-op)
+    except OSError:
+        console.print(f"[red]stopped[/red]  stale pid {pid} (process not running)")
+        console.print("  run `pith run` to start the service")
+        pid_file.unlink(missing_ok=True)
+        health_file.unlink(missing_ok=True)
+        return
+
+    console.print(f"[green]running[/green]  pid {pid}")
+
+
 async def cmd_logs_tail(_: argparse.Namespace) -> None:
     cfg_result = load_config()
     log_dir = Path(cfg_result.config.runtime.log_dir)
@@ -283,7 +310,8 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("setup", help="Interactive setup wizard")
     sub.add_parser("run", help="Run service loop (telegram optional)")
     sub.add_parser("chat", help="Interactive streaming terminal chat")
-    sub.add_parser("doctor", help="Show runtime status")
+    sub.add_parser("status", help="Check if the service is running")
+    sub.add_parser("doctor", help="Show configuration details")
 
     logs = sub.add_parser("logs", help="View local logs")
     logs_sub = logs.add_subparsers(dest="logs_cmd", required=True)
@@ -302,6 +330,8 @@ async def run() -> None:
         await cmd_run(args)
     elif args.command == "chat":
         await cmd_chat(args)
+    elif args.command == "status":
+        await cmd_status(args)
     elif args.command == "doctor":
         await cmd_doctor(args)
     elif args.command == "logs":
