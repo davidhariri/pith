@@ -16,8 +16,8 @@ console = Console()
 _PROMPT = ANSI("\033[36mpith>\033[0m ")
 
 
-async def _send(runtime: Runtime, message: str, session_id: str) -> None:
-    """Send a message and stream the response to stdout."""
+async def _send(runtime: Runtime, message: str, session_id: str) -> bool:
+    """Send a message and stream the response to stdout. Returns True on success."""
 
     def on_text(delta: str) -> None:
         sys.stdout.write(delta)
@@ -26,13 +26,23 @@ async def _send(runtime: Runtime, message: str, session_id: str) -> None:
     def on_tool(name: str) -> None:
         console.print(f"[yellow]\\[tool][/yellow] {name}")
 
-    await runtime.chat(
-        message,
-        session_id=session_id,
-        on_text=on_text,
-        on_tool=on_tool,
-    )
-    print()
+    try:
+        await runtime.chat(
+            message,
+            session_id=session_id,
+            on_text=on_text,
+            on_tool=on_tool,
+        )
+        print()
+        return True
+    except Exception as exc:
+        msg = str(exc)
+        # Surface auth errors clearly
+        if "401" in msg or "AuthenticationError" in type(exc).__name__:
+            console.print("\n[red]error:[/red] invalid API key — run `pith setup` to reconfigure")
+        else:
+            console.print(f"\n[red]error:[/red] {type(exc).__name__}: {msg}")
+        return False
 
 
 async def run_chat(runtime: Runtime) -> None:
