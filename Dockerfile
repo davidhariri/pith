@@ -2,10 +2,12 @@ FROM python:3.12-slim
 
 WORKDIR /workspace
 
-COPY pyproject.toml README.md config.example.yaml ./
+RUN pip install --no-cache-dir uv
+
+COPY pyproject.toml uv.lock README.md config.example.yaml ./
 COPY src ./src
 COPY scripts ./scripts
 
-RUN pip install --no-cache-dir .
+RUN uv sync --frozen
 
-ENTRYPOINT ["pith", "run"]
+ENTRYPOINT ["uv", "run", "pith", "run"]
