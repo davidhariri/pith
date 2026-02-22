@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
+import sys
+
 from prompt_toolkit import PromptSession
+from prompt_toolkit.formatted_text import ANSI
 from prompt_toolkit.history import FileHistory
 from rich.console import Console
 
 from .runtime import Runtime
 
 console = Console()
+
+_PROMPT = ANSI("\033[36mpith>\033[0m ")
 
 
 async def run_chat(runtime: Runtime) -> None:
@@ -24,7 +29,7 @@ async def run_chat(runtime: Runtime) -> None:
 
     while True:
         try:
-            user_input = await session.prompt_async("\033[36mpith>\033[0m ")
+            user_input = await session.prompt_async(_PROMPT)
         except (EOFError, KeyboardInterrupt):
             break
 
@@ -49,7 +54,8 @@ async def run_chat(runtime: Runtime) -> None:
             continue
 
         def on_text(delta: str) -> None:
-            console.print(delta, end="", highlight=False)
+            sys.stdout.write(delta)
+            sys.stdout.flush()
 
         def on_tool(name: str) -> None:
             console.print(f"[yellow]\\[tool][/yellow] {name}")
@@ -61,4 +67,4 @@ async def run_chat(runtime: Runtime) -> None:
             on_tool=on_tool,
         )
         # Newline after streamed output
-        console.print()
+        print()
