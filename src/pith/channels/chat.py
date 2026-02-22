@@ -5,15 +5,17 @@ from __future__ import annotations
 import sys
 
 from prompt_toolkit import PromptSession
-from prompt_toolkit.formatted_text import ANSI
 from prompt_toolkit.history import FileHistory
+from prompt_toolkit.styles import Style
 from rich.console import Console
 
 from ..runtime import Runtime
 
 console = Console()
 
-_PROMPT = ANSI("\033[36mpith>\033[0m ")
+_style = Style.from_dict({
+    "placeholder": "gray italic",
+})
 
 
 async def _send(runtime: Runtime, message: str, session_id: str) -> bool:
@@ -51,13 +53,14 @@ async def run_chat(runtime: Runtime) -> None:
 
     session: PromptSession[str] = PromptSession(
         history=FileHistory(str(history_path)),
+        placeholder=[("class:placeholder", "say something...")],
     )
 
     bootstrap_complete = await runtime.storage.get_bootstrap_state()
 
     if not bootstrap_complete:
         # First run — kick off bootstrap to collect identities
-        console.print("[bold]welcome to pith[/bold]  (type /quit to exit)\n")
+        console.print()
         await _send(runtime, "Hello — let's get started.", session_id)
     else:
         # Resuming — show session context
@@ -65,13 +68,16 @@ async def run_chat(runtime: Runtime) -> None:
         profiles = await runtime.storage.all_profile_fields()
         agent_name = profiles.get("agent", {}).get("name", "pith")
         if history:
-            console.print(f"[bold]{agent_name}[/bold]  resuming session  (type /quit to exit)")
+            console.print(f"[dim]resuming session with {agent_name}  (/quit to exit)[/dim]")
         else:
-            console.print(f"[bold]{agent_name}[/bold]  new session  (type /quit to exit)")
+            console.print(f"[dim]new session with {agent_name}  (/quit to exit)[/dim]")
 
     while True:
         try:
-            user_input = await session.prompt_async(_PROMPT)
+            user_input = await session.prompt_async(
+                "> ",
+                style=_style,
+            )
         except (EOFError, KeyboardInterrupt):
             break
 
