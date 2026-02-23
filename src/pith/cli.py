@@ -328,6 +328,9 @@ async def _run_foreground() -> None:
     # Seed example extensions on first run
     _seed_workspace_extensions(runtime.workspace)
 
+    # Ensure mcp directory exists
+    (runtime.workspace / "mcp").mkdir(parents=True, exist_ok=True)
+
     async with runtime.storage:
         await runtime.initialize()
 

@@ -107,7 +107,32 @@ workspace/extensions/
 
 See `docs/decisions/003-extension-interface.md` and `docs/decisions/005-autonomy-boundary.md`.
 
-**6. Memory system**
+**6. MCP servers (agent-installable)**
+
+The agent can install MCP (Model Context Protocol) servers to discover and call third-party tools via HTTP. Configs live in the workspace:
+
+```
+workspace/mcp/
+├── slack.yaml
+└── github.yaml
+```
+
+Each yaml file defines one server:
+
+```yaml
+url: https://mcp.example.com/rpc
+headers:
+  Authorization: Bearer ${SOME_TOKEN}
+```
+
+- HTTP (streamable) transport only — no stdio/subprocess.
+- Tool names are namespaced: `mcp_<server>_<tool>` (e.g. `mcp_slack_send_message`).
+- On `refresh()`, each server's tools are discovered via JSON-RPC `tools/list`.
+- Non-fatal discovery: unreachable servers are warned and skipped.
+- Env var substitution in yaml values (`${VAR_NAME}`).
+- MCP tools are called via the same `tool_call` built-in as extension tools.
+
+**7. Memory system**
 
 Canonical memory is DB-native in SQLite.
 
@@ -118,7 +143,7 @@ Canonical memory is DB-native in SQLite.
 
 See `docs/decisions/002-system-prompt.md`, `docs/decisions/006-memory-lifecycle-recall.md`, and `docs/decisions/007-session-compaction.md`.
 
-**7. Identity and persona model**
+**8. Identity and persona model**
 
 - `SOUL.md` is always injected and remains agent-editable.
 - Agent identity and user identity are stored in runtime-managed SQLite profile tables.
@@ -126,13 +151,13 @@ See `docs/decisions/002-system-prompt.md`, `docs/decisions/006-memory-lifecycle-
 
 See `docs/decisions/011-bootstrap-profile-state.md` and `docs/decisions/005-autonomy-boundary.md`.
 
-**8. Model runtime**
+**9. Model runtime**
 
 `pydantic-ai` is the compatibility layer for model providers and tool-calling.
 
 See `docs/decisions/010-model-adapter.md`.
 
-**9. Container boundary**
+**10. Container boundary**
 
 Docker is available for containerized deployment but not required. The agent's workspace is a `workspace/` subdirectory, separate from the pith source code. When running locally, basic path sandboxing constrains file access to this workspace directory. When running in Docker, the container provides additional process-level isolation.
 
@@ -144,7 +169,7 @@ Docker is available for containerized deployment but not required. The agent's w
 
 See `docs/decisions/004-container-runtime.md`, `docs/decisions/008-tool-execution-safety.md`, and `docs/decisions/012-external-config.md`.
 
-**10. Observability**
+**11. Observability**
 
 Minimal structured audit trail:
 
@@ -153,7 +178,7 @@ Minimal structured audit trail:
 
 See `docs/decisions/009-observability.md`.
 
-**11. Interaction surfaces**
+**12. Interaction surfaces**
 
 - CLI surface: `pith setup`, `pith run`, `pith chat`, `pith doctor`, `pith status`, `pith stop`, `pith restart`, `pith logs tail`.
 - `pith run` starts the HTTP API server (Starlette + uvicorn) and autostarts any loaded extension channels. It owns the Runtime.

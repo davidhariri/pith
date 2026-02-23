@@ -12,6 +12,8 @@ from pathlib import Path
 from types import ModuleType
 from typing import Any
 
+from .mcp import MCPRegistry
+
 
 @dataclass
 class ExtensionTool:
@@ -39,12 +41,15 @@ class ExtensionRegistry:
         self.workspace_root = workspace_root
         self.tools_dir = workspace_root / "extensions" / "tools"
         self.channels_dir = workspace_root / "extensions" / "channels"
+        self.mcp_dir = workspace_root / "mcp"
         self.tools: dict[str, ExtensionTool] = {}
         self.channels: dict[str, ExtensionChannel] = {}
+        self.mcp = MCPRegistry()
 
     async def refresh(self) -> tuple[dict[str, ExtensionTool], dict[str, ExtensionChannel]]:
         self.tools = await self._load_tools()
         self.channels = await self._load_channels()
+        await self.mcp.refresh(self.mcp_dir)
         return self.tools, self.channels
 
     async def _load_tools(self) -> dict[str, ExtensionTool]:

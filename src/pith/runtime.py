@@ -180,10 +180,16 @@ class Runtime:
 
             # Extension tool list (for awareness, not schemas)
             ext_tools = sorted(runtime.extensions.tools.keys())
-            if ext_tools:
+            mcp_tools = runtime.extensions.mcp.get_tool_descriptions()
+            if ext_tools or mcp_tools:
                 extra_lines = ["# Additional tools (call via tool_call)"]
                 for t in ext_tools:
                     extra_lines.append(f"- {t}")
+                for t, desc in sorted(mcp_tools.items()):
+                    line = f"- {t}"
+                    if desc:
+                        line += f": {desc}"
+                    extra_lines.append(line)
                 parts.append("\n".join(extra_lines))
 
             if channel:
@@ -405,10 +411,10 @@ class Runtime:
             return f"profile_set:{profile_type}.{key}={value}"
 
         @agent.tool_plain(
-            description="Call an extension tool by name. Use for tools not built-in."
+            description="Call an extension or MCP tool by name. Use for tools not built-in."
         )
         async def tool_call(name: str, args: dict[str, Any] | None = None) -> str:
-            """Route a call to an extension tool."""
+            """Route a call to an extension or MCP tool."""
             call_args = args or {}
             await runtime.storage.log_event(
                 "tool_call.start", payload={"name": name, "args": call_args}
@@ -416,6 +422,8 @@ class Runtime:
             try:
                 if name in runtime.extensions.tools:
                     return await runtime.extensions.call_tool(name, call_args)
+                if name in runtime.extensions.mcp.tools:
+                    return await runtime.extensions.mcp.call(name, call_args)
                 return f"unknown tool: {name}"
             except Exception as exc:
                 msg = f"{type(exc).__name__}: {exc}"
