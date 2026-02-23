@@ -26,11 +26,6 @@ model:
   model: gpt-4o
   api_key_env: OPENAI_API_KEY
   base_url: ${OPENAI_BASE_URL}
-telegram:
-  transport: polling
-  bot_token_env: TELEGRAM_BOT_TOKEN
-mcp:
-  servers: {}
 """.strip(),
         encoding="utf-8",
     )
@@ -43,7 +38,6 @@ mcp:
     assert result.path == config_path
     assert result.config.model.base_url == "https://example.test/v1"
     assert os.environ["OPENAI_API_KEY"] == "abc123"
-    assert result.config.mcp_servers == {}
 
 
 def test_load_config_missing_model_fields(tmp_path: Path) -> None:

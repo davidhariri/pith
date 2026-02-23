@@ -36,22 +36,6 @@ class ModelConfig:
 
 
 @dataclass
-class TelegramConfig:
-    transport: str = "polling"
-    bot_token_env: str = "TELEGRAM_BOT_TOKEN"
-
-
-@dataclass
-class MCPServerConfig:
-    transport: str
-    command: str | None = None
-    args: list[str] = field(default_factory=list)
-    url: str | None = None
-    headers: dict[str, str] = field(default_factory=dict)
-    tools: list[str] | None = None
-
-
-@dataclass
 class ServerConfig:
     host: str = "0.0.0.0"
     port: int = 8420
@@ -62,9 +46,7 @@ class Config:
     version: int
     runtime: RuntimeConfig
     model: ModelConfig
-    telegram: TelegramConfig = field(default_factory=TelegramConfig)
     server: ServerConfig = field(default_factory=ServerConfig)
-    mcp_servers: dict[str, MCPServerConfig] = field(default_factory=dict)
 
 
 @dataclass
@@ -143,38 +125,12 @@ def _parse_model(raw: dict[str, Any]) -> ModelConfig:
     )
 
 
-def _parse_telegram(raw: dict[str, Any]) -> TelegramConfig:
-    telegram = raw.get("telegram", {})
-    return TelegramConfig(
-        transport=str(telegram.get("transport", "polling")),
-        bot_token_env=str(telegram.get("bot_token_env", "TELEGRAM_BOT_TOKEN")),
-    )
-
-
 def _parse_server(raw: dict[str, Any]) -> ServerConfig:
     server = raw.get("server", {})
     return ServerConfig(
         host=str(server.get("host", "0.0.0.0")),
         port=int(server.get("port", 8420)),
     )
-
-
-def _parse_mcp_servers(raw: dict[str, Any]) -> dict[str, MCPServerConfig]:
-    out: dict[str, MCPServerConfig] = {}
-    for name, cfg in (raw or {}).items():
-        if not isinstance(cfg, dict):
-            continue
-        transport = cfg.get("transport", "stdio")
-        tools = cfg.get("tools")
-        out[str(name)] = MCPServerConfig(
-            transport=str(transport),
-            command=cfg.get("command"),
-            args=cfg.get("args", []) or [],
-            url=cfg.get("url"),
-            headers=cfg.get("headers", {}) or {},
-            tools=tools if isinstance(tools, list) else None,
-        )
-    return out
 
 
 def load_config(
@@ -191,8 +147,6 @@ def load_config(
 
     runtime = _parse_runtime(raw, config_dir)
     model = _parse_model(raw)
-    telegram = _parse_telegram(raw)
-    mcp_servers = _parse_mcp_servers(raw.get("mcp", {}).get("servers", {}))
     server = _parse_server(raw)
 
     return ConfigLoadResult(
@@ -201,8 +155,6 @@ def load_config(
             version=version,
             runtime=runtime,
             model=model,
-            telegram=telegram,
             server=server,
-            mcp_servers=mcp_servers,
         ),
     )

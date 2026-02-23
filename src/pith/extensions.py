@@ -12,8 +12,6 @@ from pathlib import Path
 from types import ModuleType
 from typing import Any
 
-from .constants import RESERVED_TOOL_PREFIX
-
 
 @dataclass
 class ExtensionTool:
@@ -58,10 +56,6 @@ class ExtensionRegistry:
             if file.name.startswith("_"):
                 continue
             name = file.stem
-            if name.startswith(RESERVED_TOOL_PREFIX):
-                raise ExtensionError(
-                    f"extension tool {name} uses reserved MCP prefix '{RESERVED_TOOL_PREFIX}'"
-                )
 
             module = await self._load_module(file)
             if not hasattr(module, "run"):

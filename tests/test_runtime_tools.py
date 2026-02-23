@@ -5,9 +5,8 @@ from pathlib import Path
 import pytest
 from pydantic_ai.models.test import TestModel
 
-from pith.config import Config, ModelConfig, RuntimeConfig, TelegramConfig
+from pith.config import Config, ModelConfig, RuntimeConfig
 from pith.extensions import ExtensionRegistry
-from pith.mcp_client import MCPClient
 from pith.runtime import Runtime
 from pith.storage import Storage
 
@@ -24,14 +23,11 @@ def _make_runtime(tmp_path: Path) -> tuple[Runtime, Storage]:
             log_dir=str(workspace / ".pith" / "logs"),
         ),
         model=ModelConfig(provider="test", model="test-model", api_key_env="TEST_KEY"),
-        telegram=TelegramConfig(),
-        mcp_servers={},
     )
 
     storage = Storage(db_path)
     extensions = ExtensionRegistry(workspace)
-    mcp_client = MCPClient(workspace, {})
-    runtime = Runtime(cfg, storage, extensions, mcp_client)
+    runtime = Runtime(cfg, storage, extensions)
     return runtime, storage
 
 

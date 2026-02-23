@@ -15,21 +15,121 @@ from rich.console import Console
 
 from .config import ConfigLoadResult, default_config_path, load_config
 from .extensions import ExtensionRegistry
-from .mcp_client import MCPClient
 from .runtime import Runtime
 from .storage import Storage
 
 console = Console()
+
+# -- Seed extensions (written on first run) --
+
+_SEED_TELEGRAM = '''\
+"""Telegram channel — extension version.
+
+Polls the Telegram Bot API for messages and sends replies.
+Requires TELEGRAM_BOT_TOKEN in the environment.
+
+Extension channel contract:
+  connect()            — initialize transport
+  recv() -> dict       — block until next message
+  send(incoming, text) — send reply using metadata from incoming
+"""
+
+from __future__ import annotations
+
+import asyncio
+import os
+from typing import Any
+
+import httpx
+
+_client: httpx.AsyncClient | None = None
+_offset: int = 0
+
+
+async def connect() -> None:
+    global _client
+    token = os.environ.get("TELEGRAM_BOT_TOKEN")
+    if not token:
+        raise RuntimeError("TELEGRAM_BOT_TOKEN not set")
+    _client = httpx.AsyncClient(
+        base_url=f"https://api.telegram.org/bot{token}", timeout=60
+    )
+
+
+async def recv() -> dict[str, Any]:
+    global _offset
+    assert _client is not None
+    while True:
+        params: dict[str, Any] = {
+            "offset": _offset,
+            "timeout": 30,
+            "allowed_updates": ["message"],
+        }
+        resp = await _client.get("/getUpdates", params=params)
+        data = resp.json()
+        if not data.get("ok"):
+            await asyncio.sleep(2)
+            continue
+        for update in data.get("result", []):
+            _offset = max(_offset, int(update.get("update_id", 0)) + 1)
+            message = update.get("message") or {}
+            text = message.get("text")
+            if text:
+                return {"text": text, "chat_id": message["chat"]["id"]}
+        await asyncio.sleep(0.25)
+
+
+async def send(incoming: dict[str, Any], text: str) -> None:
+    assert _client is not None
+    await _client.post(
+        "/sendMessage", json={"chat_id": incoming["chat_id"], "text": text}
+    )
+'''
+
+_SEED_WEB_FETCH = '''\
+"""Fetch a URL and return its text content.
+
+Usage via tool_call:
+  tool_call(name="web_fetch", args={"url": "https://example.com"})
+"""
+
+from __future__ import annotations
+
+import httpx
+
+
+async def run(url: str, max_chars: int = 8000) -> str:
+    """Fetch a URL and return the response body (truncated to max_chars)."""
+    async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
+        resp = await client.get(url)
+        resp.raise_for_status()
+        text = resp.text
+        if len(text) > max_chars:
+            text = text[:max_chars] + "\\n... (truncated)"
+        return text
+'''
+
+
+def _seed_workspace_extensions(workspace: Path) -> None:
+    """Write example extensions if the extensions directory doesn't exist yet."""
+    ext_dir = workspace / "extensions"
+    if ext_dir.exists():
+        return
+
+    channels_dir = ext_dir / "channels"
+    tools_dir = ext_dir / "tools"
+    channels_dir.mkdir(parents=True, exist_ok=True)
+    tools_dir.mkdir(parents=True, exist_ok=True)
+
+    (channels_dir / "telegram.py").write_text(_SEED_TELEGRAM, encoding="utf-8")
+    (tools_dir / "web_fetch.py").write_text(_SEED_WEB_FETCH, encoding="utf-8")
 
 
 def _load_runtime() -> Runtime:
     cfg_result: ConfigLoadResult = load_config()
     storage = Storage(cfg_result.config.runtime.memory_db_path)
     extensions = ExtensionRegistry(Path(cfg_result.config.runtime.workspace_path))
-    mcp_client = MCPClient(
-        Path(cfg_result.config.runtime.workspace_path), cfg_result.config.mcp_servers
-    )
-    return Runtime(cfg_result.config, storage, extensions, mcp_client)
+    return Runtime(cfg_result.config, storage, extensions)
 
 
 # -- Interactive helpers --
@@ -182,9 +282,33 @@ async def _run_setup(config_path: Path, env_path: Path) -> None:
     console.print(f"[green]✓[/green] wrote {env_path}")
     console.print("\n[bold]next steps:[/bold]")
     console.print("  pith chat    start a conversation")
-    console.print("  pith run     start the service loop (telegram, etc.)")
+    console.print("  pith run     start the service loop")
     console.print("  pith status  check if the service is running")
     console.print("  pith doctor  check configuration\n")
+
+
+# -- Channel runner --
+
+
+async def _run_channel(runtime: Runtime, channel) -> None:
+    """Run an extension channel: connect, then loop recv/send."""
+    try:
+        await channel.connect()
+    except Exception as exc:
+        console.print(f"[yellow]channel {channel.name}:[/yellow] {exc}")
+        return
+    while True:
+        try:
+            incoming = await channel.recv()
+            text = incoming.get("text", "")
+            if not text:
+                continue
+            session_id = await runtime.storage.ensure_active_session()
+            reply = await runtime.chat(text, session_id=session_id, channel=channel.name)
+            await channel.send(incoming, reply)
+        except Exception as exc:
+            console.print(f"[yellow]channel {channel.name}:[/yellow] {exc}")
+            await asyncio.sleep(2)
 
 
 # -- Commands --
@@ -200,12 +324,15 @@ async def _run_foreground() -> None:
     """Run the server in the foreground (used by the spawned subprocess and Docker)."""
     import uvicorn
 
-    from .channels.telegram import run_telegram
     from .server import create_app
 
     await _ensure_configured()
     runtime = _load_runtime()
     runtime.workspace.mkdir(parents=True, exist_ok=True)
+
+    # Seed example extensions on first run
+    _seed_workspace_extensions(runtime.workspace)
+
     async with runtime.storage:
         await runtime.initialize()
 
@@ -229,10 +356,9 @@ async def _run_foreground() -> None:
         server = uvicorn.Server(uvi_config)
         tasks.append(server.serve())
 
-        # Telegram (optional, in-process)
-        token_env = runtime.cfg.telegram.bot_token_env
-        if os.environ.get(token_env):
-            tasks.append(run_telegram(runtime))
+        # Extension channels (e.g. telegram)
+        for ch in runtime.extensions.channels.values():
+            tasks.append(_run_channel(runtime, ch))
 
         await asyncio.gather(*tasks)
 
@@ -344,11 +470,6 @@ async def cmd_doctor(_: argparse.Namespace) -> None:
 
     api_key = os.environ.get(cfg.model.api_key_env)
     console.print(f"Model key ({cfg.model.api_key_env}): {'set' if api_key else 'missing'}")
-
-    tg_key = os.environ.get(cfg.telegram.bot_token_env)
-    console.print(f"Telegram key ({cfg.telegram.bot_token_env}): {'set' if tg_key else 'missing'}")
-
-    console.print(f"MCP servers: {', '.join(cfg.mcp_servers.keys()) or 'none'}")
 
 
 async def cmd_status(_: argparse.Namespace) -> None:

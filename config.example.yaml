@@ -14,17 +14,3 @@ model:
   api_key_env: ANTHROPIC_API_KEY
   base_url: null
   temperature: 0.2
-
-telegram:
-  transport: polling
-  bot_token_env: TELEGRAM_BOT_TOKEN
-
-mcp:
-  servers:
-    filesystem:
-      transport: stdio
-      command: npx
-      args:
-        - -y
-        - "@modelcontextprotocol/server-filesystem"
-        - /workspace/workspace

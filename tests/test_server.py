@@ -8,9 +8,8 @@ import httpx
 import pytest
 import pytest_asyncio
 
-from pith.config import Config, ModelConfig, RuntimeConfig, ServerConfig, TelegramConfig
+from pith.config import Config, ModelConfig, RuntimeConfig, ServerConfig
 from pith.extensions import ExtensionRegistry
-from pith.mcp_client import MCPClient
 from pith.runtime import Runtime
 from pith.server import create_app
 from pith.storage import Storage
@@ -28,15 +27,12 @@ def _make_runtime(tmp_path: Path) -> tuple[Runtime, Storage]:
             log_dir=str(workspace / ".pith" / "logs"),
         ),
         model=ModelConfig(provider="test", model="test-model", api_key_env="TEST_KEY"),
-        telegram=TelegramConfig(),
         server=ServerConfig(),
-        mcp_servers={},
     )
 
     storage = Storage(db_path)
     extensions = ExtensionRegistry(workspace)
-    mcp_client = MCPClient(workspace, {})
-    runtime = Runtime(cfg, storage, extensions, mcp_client)
+    runtime = Runtime(cfg, storage, extensions)
     return runtime, storage
 
 

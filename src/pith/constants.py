@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-DEFAULT_MCP_PREFIX = "MCP__"
-RESERVED_TOOL_PREFIX = DEFAULT_MCP_PREFIX
 SOUL_FILE = "SOUL.md"
 
 DEFAULT_MAX_MESSAGES = 20

@@ -27,12 +27,10 @@ from pydantic_ai.messages import (
 from .config import Config
 from .constants import (
     DEFAULT_MAX_TOOL_OUTPUT_CHARS,
-    DEFAULT_MCP_PREFIX,
     DEFAULT_MEMORY_TOP_N,
     SOUL_FILE,
 )
 from .extensions import ExtensionRegistry
-from .mcp_client import MCPClient
 from .storage import Storage
 
 
@@ -42,12 +40,10 @@ class Runtime:
         cfg: Config,
         storage: Storage,
         extensions: ExtensionRegistry,
-        mcp_client: MCPClient,
     ) -> None:
         self.cfg = cfg
         self.storage = storage
         self.extensions = extensions
-        self.mcp_client = mcp_client
         self.workspace = Path(cfg.runtime.workspace_path)
         self.log_dir = Path(cfg.runtime.log_dir)
         self.log_path = self.log_dir / "events.jsonl"
@@ -57,12 +53,6 @@ class Runtime:
     async def initialize(self) -> None:
         await self.storage.ensure_schema()
         await self.extensions.refresh()
-        await self.mcp_client.discover()
-        for warning in self.mcp_client.discovery_warnings:
-            print(f"\033[0;33m[warn][non-fatal]\033[0m {warning}")
-            await self.storage.log_event(
-                "mcp.discovery.warning", level="warning", payload={"message": warning}
-            )
         await self._ensure_bootstrap_state()
         self.log_dir.mkdir(parents=True, exist_ok=True)
 
@@ -188,14 +178,11 @@ class Runtime:
                         profile_lines.append(f"  {k}: {v}")
                 parts.append("\n".join(profile_lines))
 
-            # Extension + MCP tool list (for awareness, not schemas)
+            # Extension tool list (for awareness, not schemas)
             ext_tools = sorted(runtime.extensions.tools.keys())
-            mcp_tools = runtime.mcp_client.list_tools()
-            if ext_tools or mcp_tools:
+            if ext_tools:
                 extra_lines = ["# Additional tools (call via tool_call)"]
                 for t in ext_tools:
-                    extra_lines.append(f"- {t}")
-                for t in mcp_tools:
                     extra_lines.append(f"- {t}")
                 parts.append("\n".join(extra_lines))
 
@@ -418,10 +405,10 @@ class Runtime:
             return f"profile_set:{profile_type}.{key}={value}"
 
         @agent.tool_plain(
-            description="Call an extension or MCP tool by name. Use for tools not built-in."
+            description="Call an extension tool by name. Use for tools not built-in."
         )
         async def tool_call(name: str, args: dict[str, Any] | None = None) -> str:
-            """Route a call to an extension or MCP tool."""
+            """Route a call to an extension tool."""
             call_args = args or {}
             await runtime.storage.log_event(
                 "tool_call.start", payload={"name": name, "args": call_args}
@@ -429,8 +416,6 @@ class Runtime:
             try:
                 if name in runtime.extensions.tools:
                     return await runtime.extensions.call_tool(name, call_args)
-                if name.startswith(DEFAULT_MCP_PREFIX):
-                    return await runtime.mcp_client.call(name, call_args)
                 return f"unknown tool: {name}"
             except Exception as exc:
                 msg = f"{type(exc).__name__}: {exc}"
