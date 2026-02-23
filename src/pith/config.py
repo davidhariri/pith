@@ -113,13 +113,17 @@ def _load_yaml(config_path: Path) -> dict[str, Any]:
     return _resolve_env_vars(raw)
 
 
-def _parse_runtime(raw: dict[str, Any], workspace_root: Path) -> RuntimeConfig:
+def _parse_runtime(raw: dict[str, Any], config_dir: Path) -> RuntimeConfig:
     runtime = raw.get("runtime", {})
-    workspace_path = Path(runtime.get("workspace_path", str(workspace_root)))
-    memory_db_path = str(runtime.get("memory_db_path", str(workspace_path / "memory.db")))
-    log_dir = str(runtime.get("log_dir", str(workspace_path / ".pith" / "logs")))
+    workspace_path = (config_dir / runtime.get("workspace_path", ".")).resolve()
+    memory_db_path = str(
+        (config_dir / runtime.get("memory_db_path", "./memory.db")).resolve()
+    )
+    log_dir = str(
+        (config_dir / runtime.get("log_dir", "./.pith/logs")).resolve()
+    )
     return RuntimeConfig(
-        workspace_path=workspace_path,
+        workspace_path=str(workspace_path),
         memory_db_path=memory_db_path,
         log_dir=log_dir,
     )
@@ -176,16 +180,16 @@ def _parse_mcp_servers(raw: dict[str, Any]) -> dict[str, MCPServerConfig]:
 def load_config(
     config_path: Path | None = None, workspace_root: Path | None = None
 ) -> ConfigLoadResult:
-    if workspace_root is None:
-        workspace_root = Path.cwd()
-    _load_workspace_env(workspace_root / ".env")
-
     path = config_path or Path(os.environ.get("PITH_CONFIG", str(default_config_path())))
+    config_dir = path.resolve().parent
+
+    env_root = workspace_root or config_dir
+    _load_workspace_env(env_root / ".env")
 
     raw = _load_yaml(path)
     version = int(raw.get("version", 1))
 
-    runtime = _parse_runtime(raw, workspace_root)
+    runtime = _parse_runtime(raw, config_dir)
     model = _parse_model(raw)
     telegram = _parse_telegram(raw)
     mcp_servers = _parse_mcp_servers(raw.get("mcp", {}).get("servers", {}))
