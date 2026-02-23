@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import getpass
 import sys
 from pathlib import Path
 
@@ -97,8 +96,15 @@ async def _send(client: PithClient, message: str, session_id: str) -> bool:
                 spinner_task.cancel()
             sys.stdout.write("\r\033[K")
             sys.stdout.flush()
-        console.print(f"  [yellow]secret requested:[/yellow] {name}")
-        value = await asyncio.to_thread(getpass.getpass, f"  Enter value for {name}: ")
+        console.print()
+        console.print(f"  [yellow bold]secret needed:[/yellow bold] {name}")
+        pw_session: PromptSession[str] = PromptSession()
+        value = await pw_session.prompt_async(
+            "  paste value (hidden): ",
+            is_password=True,
+        )
+        console.print("  [green]saved[/green]")
+        console.print()
         return value
 
     try:
