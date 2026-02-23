@@ -240,6 +240,15 @@ class Runtime:
                         profile_lines.append(f"  {k}: {v}")
                 parts.append("\n".join(profile_lines))
 
+            # Workflow memories — always in context
+            if not bootstrap:
+                workflow_mems = await runtime.storage.memory_by_tag("workflow")
+                if workflow_mems:
+                    wf_lines = ["# Workflow preferences"]
+                    for m in workflow_mems:
+                        wf_lines.append(f"- {m.content}")
+                    parts.append("\n".join(wf_lines))
+
             # Extension tool list (for awareness, not schemas)
             ext_tools = sorted(runtime.extensions.tools.keys())
             mcp_tools = runtime.extensions.mcp.get_tool_descriptions()

@@ -433,3 +433,29 @@ class Storage:
             )
             for row in rows
         ]
+
+    async def memory_by_tag(self, tag: str) -> list[MemoryEntry]:
+        """Return all non-deleted memories that contain the given tag."""
+        # Tags are stored comma-separated; wrapping both sides with commas
+        # lets a single LIKE match tags at any position including sole tag.
+        rows = await self._fetchall(
+            """
+            SELECT id, content, kind, tags, source, created_at, updated_at
+            FROM memory_entries
+            WHERE deleted = 0 AND (',' || COALESCE(tags, '') || ',') LIKE ?
+            ORDER BY created_at DESC
+            """,
+            (f"%,{tag},%",),
+        )
+        return [
+            MemoryEntry(
+                id=int(row[0]),
+                content=row[1],
+                kind=row[2],
+                tags=row[3],
+                source=row[4],
+                created_at=row[5],
+                updated_at=row[6],
+            )
+            for row in rows
+        ]

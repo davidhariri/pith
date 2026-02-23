@@ -84,3 +84,26 @@ async def test_storage_compact_session(tmp_path: Path) -> None:
 
         summaries = await storage.list_session_summaries(session_id)
         assert len(summaries) == 1
+
+
+@pytest.mark.asyncio
+async def test_memory_by_tag(tmp_path: Path) -> None:
+    db_path = tmp_path / "memory.db"
+
+    async with Storage(db_path) as storage:
+        await storage.memory_save("review todo on startup", tags=["workflow", "startup"])
+        await storage.memory_save("prefers dark mode", tags=["preferences"])
+        await storage.memory_save("always greet warmly", tags=["workflow"])
+
+        workflow = await storage.memory_by_tag("workflow")
+        assert len(workflow) == 2
+        contents = {m.content for m in workflow}
+        assert "review todo on startup" in contents
+        assert "always greet warmly" in contents
+
+        startup = await storage.memory_by_tag("startup")
+        assert len(startup) == 1
+        assert startup[0].content == "review todo on startup"
+
+        empty = await storage.memory_by_tag("nonexistent")
+        assert len(empty) == 0
