@@ -24,7 +24,7 @@ def _make_runtime(tmp_path: Path) -> tuple[Runtime, Storage]:
         runtime=RuntimeConfig(
             workspace_path=str(workspace),
             memory_db_path=str(db_path),
-            log_dir=str(workspace / ".pith" / "logs"),
+            log_dir=str(workspace / "logs"),
         ),
         model=ModelConfig(provider="test", model="test-model", api_key_env="TEST_KEY"),
         server=ServerConfig(),

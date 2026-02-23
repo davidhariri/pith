@@ -1,12 +1,12 @@
 # Copy to ./config.yaml in the repo root (or set PITH_CONFIG to another path).
 # Or run `uv run pith setup` to generate this interactively.
+#
+# Paths are derived from the config file location:
+#   workspace: <config_dir>/workspace/
+#   database:  <config_dir>/memory.db
+#   logs:      <config_dir>/workspace/.pith/logs/
 
 version: 1
-
-runtime:
-  workspace_path: /workspace/workspace
-  memory_db_path: /workspace/workspace/memory.db
-  log_dir: /workspace/workspace/.pith/logs
 
 model:
   provider: anthropic

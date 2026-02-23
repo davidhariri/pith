@@ -17,10 +17,6 @@ def test_load_config_with_env_substitution(tmp_path: Path, monkeypatch) -> None:
     config_path.write_text(
         """
 version: 1
-runtime:
-  workspace_path: .
-  memory_db_path: ./memory.db
-  log_dir: ./.pith/logs
 model:
   provider: openai
   model: gpt-4o
@@ -39,16 +35,16 @@ model:
     assert result.config.model.base_url == "https://example.test/v1"
     assert os.environ["OPENAI_API_KEY"] == "abc123"
 
+    # Paths are derived from config_dir, not configurable
+    assert result.config.runtime.workspace_path == str((workspace / "workspace").resolve())
+    assert result.config.runtime.memory_db_path == str((workspace / "memory.db").resolve())
+
 
 def test_load_config_missing_model_fields(tmp_path: Path) -> None:
     config_path = tmp_path / "config.yaml"
     config_path.write_text(
         """
 version: 1
-runtime:
-  workspace_path: .
-  memory_db_path: ./memory.db
-  log_dir: ./.pith/logs
 model: {}
 """.strip(),
         encoding="utf-8",

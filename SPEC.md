@@ -140,6 +140,7 @@ Docker is available for containerized deployment but not required. The agent's w
 - Path sandboxing: all file tools resolve paths relative to workspace and reject escapes.
 - Docker (optional): workspace mount read/write, no host FS access beyond mounted paths, no Docker socket mount.
 - External runtime config is outside workspace paths.
+- Paths are derived from the config file location, not configurable: `<config_dir>/workspace/` for workspace, `<config_dir>/memory.db` for the database (outside workspace), `<config_dir>/workspace/.pith/logs/` for logs.
 
 See `docs/decisions/004-container-runtime.md`, `docs/decisions/008-tool-execution-safety.md`, and `docs/decisions/012-external-config.md`.
 

@@ -20,10 +20,11 @@ def default_config_path() -> Path:
 
 @dataclass
 class RuntimeConfig:
+    """Derived paths — not configurable, computed from config_dir."""
+
     workspace_path: str
     memory_db_path: str
     log_dir: str
-    bootstrap_version: int = 1
 
 
 @dataclass
@@ -95,19 +96,12 @@ def _load_yaml(config_path: Path) -> dict[str, Any]:
     return _resolve_env_vars(raw)
 
 
-def _parse_runtime(raw: dict[str, Any], config_dir: Path) -> RuntimeConfig:
-    runtime = raw.get("runtime", {})
-    workspace_path = (config_dir / runtime.get("workspace_path", ".")).resolve()
-    memory_db_path = str(
-        (config_dir / runtime.get("memory_db_path", "./memory.db")).resolve()
-    )
-    log_dir = str(
-        (config_dir / runtime.get("log_dir", "./.pith/logs")).resolve()
-    )
+def _build_runtime(config_dir: Path) -> RuntimeConfig:
+    workspace = (config_dir / "workspace").resolve()
     return RuntimeConfig(
-        workspace_path=str(workspace_path),
-        memory_db_path=memory_db_path,
-        log_dir=log_dir,
+        workspace_path=str(workspace),
+        memory_db_path=str((config_dir / "memory.db").resolve()),
+        log_dir=str((workspace / ".pith" / "logs").resolve()),
     )
 
 
@@ -145,7 +139,7 @@ def load_config(
     raw = _load_yaml(path)
     version = int(raw.get("version", 1))
 
-    runtime = _parse_runtime(raw, config_dir)
+    runtime = _build_runtime(config_dir)
     model = _parse_model(raw)
     server = _parse_server(raw)
 

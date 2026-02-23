@@ -255,14 +255,9 @@ async def _run_setup(config_path: Path, env_path: Path) -> None:
 
     os.environ[api_key_env] = api_key_value
 
-    # Build config (relative paths — work on host and inside Docker container)
+    # Build config (paths are derived from config file location)
     config_data: dict = {
         "version": 1,
-        "runtime": {
-            "workspace_path": "./workspace",
-            "memory_db_path": "./workspace/memory.db",
-            "log_dir": "./workspace/.pith/logs",
-        },
         "model": {
             "provider": provider,
             "model": model_name,
