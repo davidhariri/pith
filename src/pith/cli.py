@@ -476,26 +476,50 @@ async def cmd_status(_: argparse.Namespace) -> None:
     console.print(f"[green]running[/green]  pid {pid}")
 
 
+def _find_pid_on_port(port: int) -> int | None:
+    """Find a PID listening on the given port via lsof (fallback when pid file is stale)."""
+    import subprocess
+
+    try:
+        result = subprocess.run(
+            ["lsof", "-ti", f":{port}"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            # May return multiple PIDs (one per connection); take the first
+            return int(result.stdout.strip().splitlines()[0])
+    except Exception:
+        pass
+    return None
+
+
 def _read_pid() -> tuple[Path, Path, int | None]:
     """Read PID and health file paths. Returns (pid_file, health_file, pid_or_None)."""
     cfg_result = load_config()
     workspace = Path(cfg_result.config.runtime.workspace_path)
+    port = cfg_result.config.server.port
     pith_dir = workspace / ".pith"
     pid_file = pith_dir / "pid"
     health_file = pith_dir / "healthy"
 
-    if not pid_file.exists():
-        return pid_file, health_file, None
+    # Try pid file first
+    if pid_file.exists():
+        pid = int(pid_file.read_text().strip())
+        try:
+            os.kill(pid, 0)
+            return pid_file, health_file, pid
+        except OSError:
+            pid_file.unlink(missing_ok=True)
+            health_file.unlink(missing_ok=True)
 
-    pid = int(pid_file.read_text().strip())
-    try:
-        os.kill(pid, 0)
-    except OSError:
-        pid_file.unlink(missing_ok=True)
-        health_file.unlink(missing_ok=True)
-        return pid_file, health_file, None
+    # Fallback: check what's actually listening on the port
+    port_pid = _find_pid_on_port(port)
+    if port_pid is not None:
+        return pid_file, health_file, port_pid
 
-    return pid_file, health_file, pid
+    return pid_file, health_file, None
 
 
 async def _kill_and_wait(pid: int) -> None:
