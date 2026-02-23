@@ -104,7 +104,11 @@ async def _greet(client: PithClient, session_id: str) -> None:
     if bootstrap:
         await _send(client, "Hello — I just started pith for the first time.", session_id)
     else:
-        await _send(client, "[new conversation]", session_id)
+        await _send(
+            client,
+            "[new conversation — greet the user briefly, don't re-introduce yourself]",
+            session_id,
+        )
 
 
 async def run_chat(client: PithClient) -> None:
