@@ -75,7 +75,9 @@ See `docs/decisions/001-telegram-polling.md` and `docs/decisions/003-extension-i
 - `read`
 - `write`
 - `edit`
-- `bash`
+- `list_dir`
+- `file_search`
+- `run_python`
 - `memory_save`
 - `memory_search`
 - `set_profile`
@@ -143,8 +145,9 @@ See `docs/decisions/010-model-adapter.md`.
 
 **10. Container boundary**
 
-Docker is available for containerized deployment but not required. When running locally, basic path sandboxing constrains file access to the workspace directory. When running in Docker, the container provides additional process-level isolation.
+Docker is available for containerized deployment but not required. The agent's workspace is a `workspace/` subdirectory, separate from the pith source code. When running locally, basic path sandboxing constrains file access to this workspace directory. When running in Docker, the container provides additional process-level isolation.
 
+- Workspace isolation: the agent sees only `workspace/` — pith source code (src/, tests/, docs/) is invisible.
 - Path sandboxing: all file tools resolve paths relative to workspace and reject escapes.
 - Docker (optional): workspace mount read/write, no host FS access beyond mounted paths, no Docker socket mount.
 - External runtime config is outside workspace paths.

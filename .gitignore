@@ -11,4 +11,5 @@ config.yaml
 *.log
 PLAN.md
 .pith/
+workspace/
 events.jsonl

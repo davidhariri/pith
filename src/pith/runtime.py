@@ -14,9 +14,12 @@ import pydantic_monty
 from pydantic_ai import Agent
 from pydantic_ai._agent_graph import CallToolsNode, ModelRequestNode
 from pydantic_ai.messages import (
+    FunctionToolCallEvent,
+    FunctionToolResultEvent,
     ModelMessage,
     PartDeltaEvent,
     PartStartEvent,
+    RetryPromptPart,
     TextPart,
     TextPartDelta,
 )
@@ -443,7 +446,8 @@ class Runtime:
         message: str,
         session_id: str | None = None,
         on_text: Callable[[str], None] | None = None,
-        on_tool: Callable[[str], None] | None = None,
+        on_tool_call: Callable[[str, dict], None] | None = None,
+        on_tool_result: Callable[[str, bool], None] | None = None,
         channel: str | None = None,
     ) -> str:
         if session_id is None:
@@ -488,8 +492,21 @@ class Runtime:
                                 if on_text:
                                     on_text(delta)
                 elif isinstance(node, CallToolsNode):
-                    if on_tool and hasattr(node, "tool_name"):
-                        on_tool(node.tool_name)
+                    async with node.stream(run.ctx) as stream:
+                        async for event in stream:
+                            if isinstance(event, FunctionToolCallEvent):
+                                if on_tool_call:
+                                    args = event.part.args
+                                    if isinstance(args, str):
+                                        try:
+                                            args = json.loads(args)
+                                        except (json.JSONDecodeError, ValueError):
+                                            args = {"raw": args}
+                                    on_tool_call(event.part.tool_name, args or {})
+                            elif isinstance(event, FunctionToolResultEvent):
+                                if on_tool_result:
+                                    success = not isinstance(event.result, RetryPromptPart)
+                                    on_tool_result(event.result.tool_name or "unknown", success)
 
         # Persist all new messages from this run
         new_messages: list[ModelMessage] = run.result.new_messages()

@@ -84,8 +84,11 @@ def create_app(runtime: Runtime) -> Starlette:
         def on_text(delta: str) -> None:
             queue.put_nowait(("text", {"delta": delta}))
 
-        def on_tool(name: str) -> None:
-            queue.put_nowait(("tool", {"name": name}))
+        def on_tool_call(name: str, args: dict) -> None:
+            queue.put_nowait(("tool_call", {"name": name, "args": args}))
+
+        def on_tool_result(name: str, success: bool) -> None:
+            queue.put_nowait(("tool_result", {"name": name, "success": success}))
 
         async def _run_chat() -> None:
             try:
@@ -93,7 +96,8 @@ def create_app(runtime: Runtime) -> Starlette:
                     message,
                     session_id=session_id,
                     on_text=on_text,
-                    on_tool=on_tool,
+                    on_tool_call=on_tool_call,
+                    on_tool_result=on_tool_result,
                     channel=channel,
                 )
                 queue.put_nowait(("done", {"text": full}))

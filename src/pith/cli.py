@@ -159,9 +159,9 @@ async def _run_setup(config_path: Path, env_path: Path) -> None:
     config_data: dict = {
         "version": 1,
         "runtime": {
-            "workspace_path": ".",
-            "memory_db_path": "./memory.db",
-            "log_dir": "./.pith/logs",
+            "workspace_path": "./workspace",
+            "memory_db_path": "./workspace/memory.db",
+            "log_dir": "./workspace/.pith/logs",
         },
         "model": {
             "provider": provider,
@@ -205,6 +205,7 @@ async def _run_foreground() -> None:
 
     await _ensure_configured()
     runtime = _load_runtime()
+    runtime.workspace.mkdir(parents=True, exist_ok=True)
     async with runtime.storage:
         await runtime.initialize()
 

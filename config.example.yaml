@@ -4,9 +4,9 @@
 version: 1
 
 runtime:
-  workspace_path: /workspace
-  memory_db_path: /workspace/memory.db
-  log_dir: /workspace/.pith/logs
+  workspace_path: /workspace/workspace
+  memory_db_path: /workspace/workspace/memory.db
+  log_dir: /workspace/workspace/.pith/logs
 
 model:
   provider: anthropic
@@ -27,4 +27,4 @@ mcp:
       args:
         - -y
         - "@modelcontextprotocol/server-filesystem"
-        - /workspace
+        - /workspace/workspace

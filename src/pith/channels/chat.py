@@ -59,7 +59,7 @@ async def _send(client: PithClient, message: str, session_id: str) -> bool:
         sys.stdout.write(delta)
         sys.stdout.flush()
 
-    def on_tool(name: str) -> None:
+    def on_tool_call(name: str, args: dict) -> None:
         nonlocal started, spinner_task
         if not started:
             started = True
@@ -67,7 +67,26 @@ async def _send(client: PithClient, message: str, session_id: str) -> bool:
                 spinner_task.cancel()
             sys.stdout.write("\r\033[K")
             sys.stdout.flush()
-        console.print(f"[yellow]\\[tool][/yellow] {name}")
+        # Format args inline, truncating long values
+        parts = []
+        for k, v in args.items():
+            s = str(v)
+            if len(s) > 40:
+                s = s[:37] + "..."
+            parts.append(f'{k}="{s}"' if isinstance(v, str) else f"{k}={s}")
+        arg_str = " ".join(parts)
+        console.print(f"  [dim]{name} {arg_str}[/dim]")
+
+    def on_tool_result(name: str, success: bool) -> None:
+        nonlocal started, spinner_task
+        if not success:
+            if not started:
+                started = True
+                if spinner_task:
+                    spinner_task.cancel()
+                sys.stdout.write("\r\033[K")
+                sys.stdout.flush()
+            console.print(f"  [red]✗ {name}[/red]")
 
     try:
         spinner_task = asyncio.create_task(_spin())
@@ -75,7 +94,8 @@ async def _send(client: PithClient, message: str, session_id: str) -> bool:
             message,
             session_id=session_id,
             on_text=on_text,
-            on_tool=on_tool,
+            on_tool_call=on_tool_call,
+            on_tool_result=on_tool_result,
         )
         if spinner_task and not spinner_task.done():
             spinner_task.cancel()

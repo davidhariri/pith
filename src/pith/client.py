@@ -49,7 +49,8 @@ class PithClient:
         message: str,
         session_id: str | None = None,
         on_text: Callable[[str], None] | None = None,
-        on_tool: Callable[[str], None] | None = None,
+        on_tool_call: Callable[[str, dict], None] | None = None,
+        on_tool_result: Callable[[str, bool], None] | None = None,
     ) -> str:
         """Send a message and consume the SSE stream. Returns the full response text."""
         body: dict = {"message": message}
@@ -70,9 +71,12 @@ class PithClient:
                     if event_type == "text":
                         if on_text:
                             on_text(data["delta"])
-                    elif event_type == "tool":
-                        if on_tool:
-                            on_tool(data["name"])
+                    elif event_type == "tool_call":
+                        if on_tool_call:
+                            on_tool_call(data["name"], data.get("args", {}))
+                    elif event_type == "tool_result":
+                        if on_tool_result:
+                            on_tool_result(data["name"], data.get("success", True))
                     elif event_type == "done":
                         full_text = data["text"]
                     elif event_type == "error":

@@ -14,6 +14,6 @@ RUN uv sync --frozen
 EXPOSE 8420
 
 HEALTHCHECK --interval=5s --timeout=3s --start-period=30s --retries=3 \
-  CMD test -f /workspace/.pith/healthy || exit 1
+  CMD test -f /workspace/workspace/.pith/healthy || exit 1
 
 ENTRYPOINT ["uv", "run", "pith", "run", "--foreground"]
