@@ -405,6 +405,8 @@ async def cmd_restart(args: argparse.Namespace) -> None:
 
 
 async def cmd_nuke(_: argparse.Namespace) -> None:
+    import shutil
+
     # Stop the server if running
     pid_file, health_file, pid = _read_pid()
     if pid is not None:
@@ -432,9 +434,8 @@ async def cmd_nuke(_: argparse.Namespace) -> None:
 
     # Remove logs
     if log_dir.exists():
-        for f in log_dir.iterdir():
-            f.unlink()
-        removed.append(str(log_dir / "*"))
+        shutil.rmtree(log_dir)
+        removed.append(str(log_dir))
 
     # Remove SOUL.md
     soul = Path(cfg.runtime.workspace_path) / "SOUL.md"
@@ -442,10 +443,14 @@ async def cmd_nuke(_: argparse.Namespace) -> None:
         soul.unlink()
         removed.append(str(soul))
 
-    # Clean .pith state files (healthy, pid)
+    # Clean .pith state files (healthy, pid) but keep input_history
     if pith_dir.exists():
         for f in pith_dir.iterdir():
-            if f.name != "input_history":
+            if f.name == "input_history":
+                continue
+            if f.is_dir():
+                shutil.rmtree(f)
+            else:
                 f.unlink()
 
     if removed:
