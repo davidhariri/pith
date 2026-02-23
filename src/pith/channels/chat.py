@@ -148,10 +148,18 @@ async def run_chat(client: PithClient) -> None:
             console.print(result)
             continue
         if text == "/info":
-            import json
-
             info = await client.get_info(session_id)
-            console.print(json.dumps(info, indent=2, sort_keys=True))
+            bootstrap = info.get("bootstrap_complete", False)
+            agent = info.get("agent_profile", {})
+            user = info.get("user_profile", {})
+            console.print(f"  session    {info.get('session_id', '?')}")
+            console.print(f"  messages   {info.get('message_count', 0)}")
+            status = "[green]complete[/green]" if bootstrap else "[yellow]pending[/yellow]"
+            console.print(f"  bootstrap  {status}")
+            if agent:
+                console.print(f"  agent      {', '.join(f'{k}={v}' for k, v in agent.items())}")
+            if user:
+                console.print(f"  user       {', '.join(f'{k}={v}' for k, v in user.items())}")
             continue
 
         await _send(client, text, session_id)
