@@ -90,6 +90,9 @@ def create_app(runtime: Runtime) -> Starlette:
         def on_tool_result(name: str, success: bool) -> None:
             queue.put_nowait(("tool_result", {"name": name, "success": success}))
 
+        async def on_secret_request(request_id: str, name: str) -> None:
+            queue.put_nowait(("secret_request", {"request_id": request_id, "name": name}))
+
         async def _run_chat() -> None:
             try:
                 full = await runtime.chat(
@@ -98,6 +101,7 @@ def create_app(runtime: Runtime) -> Starlette:
                     on_text=on_text,
                     on_tool_call=on_tool_call,
                     on_tool_result=on_tool_result,
+                    on_secret_request=on_secret_request,
                     channel=channel,
                 )
                 queue.put_nowait(("done", {"text": full}))
@@ -121,12 +125,22 @@ def create_app(runtime: Runtime) -> Starlette:
 
         return _SSEResponse(_generate())
 
+    async def secrets_provide(request: Request) -> JSONResponse:
+        body = await request.json()
+        request_id = body.get("request_id", "")
+        value = body.get("value", "")
+        if not request_id or not value:
+            return JSONResponse({"error": "request_id and value required"}, status_code=400)
+        runtime.provide_secret(request_id, value)
+        return JSONResponse({"status": "ok"})
+
     routes = [
         Route("/health", health, methods=["GET"]),
         Route("/chat", chat, methods=["POST"]),
         Route("/session/new", session_new, methods=["POST"]),
         Route("/session/compact", session_compact, methods=["POST"]),
         Route("/session/info", session_info, methods=["GET"]),
+        Route("/secrets/provide", secrets_provide, methods=["POST"]),
     ]
 
     return Starlette(routes=routes)

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 
 import httpx
 
@@ -51,6 +51,7 @@ class PithClient:
         on_text: Callable[[str], None] | None = None,
         on_tool_call: Callable[[str, dict], None] | None = None,
         on_tool_result: Callable[[str, bool], None] | None = None,
+        on_secret_request: Callable[[str], Awaitable[str]] | None = None,
     ) -> str:
         """Send a message and consume the SSE stream. Returns the full response text."""
         body: dict = {"message": message}
@@ -77,6 +78,15 @@ class PithClient:
                     elif event_type == "tool_result":
                         if on_tool_result:
                             on_tool_result(data["name"], data.get("success", True))
+                    elif event_type == "secret_request":
+                        if on_secret_request:
+                            request_id = data["request_id"]
+                            name = data["name"]
+                            value = await on_secret_request(name)
+                            await self._http.post(
+                                "/secrets/provide",
+                                json={"request_id": request_id, "value": value},
+                            )
                     elif event_type == "done":
                         full_text = data["text"]
                     elif event_type == "error":

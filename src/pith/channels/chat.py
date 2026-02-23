@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import getpass
 import sys
 from pathlib import Path
 
@@ -88,6 +89,18 @@ async def _send(client: PithClient, message: str, session_id: str) -> bool:
                 sys.stdout.flush()
             console.print(f"  [red]✗ {name}[/red]")
 
+    async def on_secret_request(name: str) -> str:
+        nonlocal started, spinner_task
+        if not started:
+            started = True
+            if spinner_task:
+                spinner_task.cancel()
+            sys.stdout.write("\r\033[K")
+            sys.stdout.flush()
+        console.print(f"  [yellow]secret requested:[/yellow] {name}")
+        value = await asyncio.to_thread(getpass.getpass, f"  Enter value for {name}: ")
+        return value
+
     try:
         spinner_task = asyncio.create_task(_spin())
         await client.chat(
@@ -96,6 +109,7 @@ async def _send(client: PithClient, message: str, session_id: str) -> bool:
             on_text=on_text,
             on_tool_call=on_tool_call,
             on_tool_result=on_tool_result,
+            on_secret_request=on_secret_request,
         )
         if spinner_task and not spinner_task.done():
             spinner_task.cancel()

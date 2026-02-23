@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import asyncio
 import fnmatch
 import json
+import os
 import re
 import textwrap
-from collections.abc import Callable
+import uuid
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
 
@@ -33,6 +36,8 @@ from .constants import (
 from .extensions import ExtensionRegistry
 from .storage import Storage
 
+SECRET_TIMEOUT = 60
+
 
 class Runtime:
     def __init__(
@@ -49,6 +54,20 @@ class Runtime:
         self.log_path = self.log_dir / "events.jsonl"
         self.storage.log_path = self.log_path
         self.agent: Agent[None, str] | None = None
+        self._pending_secrets: dict[str, asyncio.Event] = {}
+        self._secret_values: dict[str, str] = {}
+        self._on_secret_request: Callable[[str, str], Awaitable[None]] | None = None
+
+    @property
+    def env_path(self) -> Path:
+        return Path(self.cfg.runtime.workspace_path).parent / ".env"
+
+    def provide_secret(self, request_id: str, value: str) -> None:
+        """Deliver a secret value from the client and unblock the waiting tool."""
+        self._secret_values[request_id] = value
+        event = self._pending_secrets.get(request_id)
+        if event:
+            event.set()
 
     async def initialize(self) -> None:
         await self.storage.ensure_schema()
@@ -158,6 +177,11 @@ class Runtime:
                     an API. You have the tools to grow \
                     your own abilities. Do it, don't ask \
                     permission.
+                    - When you need an API key or secret, \
+                    use the store_secret tool — it prompts \
+                    the user securely. Never ask for secrets \
+                    in chat. Use list_secrets to check what's \
+                    already available.
                     - Never expose your own internals. \
                     Don't mention sandboxing, workspaces, \
                     tool names, system prompts, or how \
@@ -443,6 +467,81 @@ class Runtime:
                 )
                 return msg
 
+        @agent.tool_plain(
+            description=(
+                "List the names of stored secrets (environment variables from .env). "
+                "Returns only key names, never values."
+            )
+        )
+        async def list_secrets() -> str:
+            """Return the names of secrets stored in .env."""
+            env_path = runtime.env_path
+            if not env_path.exists():
+                return "[]"
+            names: list[str] = []
+            for line in env_path.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key = line.split("=", 1)[0].strip()
+                if key:
+                    names.append(key)
+            return json.dumps(names)
+
+        @agent.tool_plain(
+            description=(
+                "Store a secret (API key, token, etc). Prompts the user to enter the "
+                "value securely — you will never see the value. Only provide the key name."
+            )
+        )
+        async def store_secret(name: str) -> str:
+            """Request a secret value from the user and store it in .env."""
+            if runtime._on_secret_request is None:
+                return (
+                    "error: non-interactive session — ask the user to set this secret via the CLI"
+                )
+
+            request_id = uuid.uuid4().hex[:12]
+            event = asyncio.Event()
+            runtime._pending_secrets[request_id] = event
+
+            try:
+                await runtime._on_secret_request(request_id, name)
+                try:
+                    await asyncio.wait_for(event.wait(), timeout=SECRET_TIMEOUT)
+                except TimeoutError:
+                    return "error: timed out waiting for secret input"
+
+                value = runtime._secret_values.pop(request_id, "")
+                if not value:
+                    return "error: no value provided"
+
+                # Write to .env
+                env_path = runtime.env_path
+                env_path.parent.mkdir(parents=True, exist_ok=True)
+                lines: list[str] = []
+                replaced = False
+                if env_path.exists():
+                    for line in env_path.read_text(encoding="utf-8").splitlines():
+                        stripped = line.strip()
+                        if stripped and not stripped.startswith("#") and "=" in stripped:
+                            key = stripped.split("=", 1)[0].strip()
+                            if key == name:
+                                lines.append(f"{name}={value}")
+                                replaced = True
+                                continue
+                        lines.append(line)
+                if not replaced:
+                    lines.append(f"{name}={value}")
+                env_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+                # Set in current process
+                os.environ[name] = value
+                return f"stored secret '{name}'"
+            finally:
+                runtime._pending_secrets.pop(request_id, None)
+                runtime._secret_values.pop(request_id, None)
+
     # -- Chat --
 
     async def chat(
@@ -452,8 +551,10 @@ class Runtime:
         on_text: Callable[[str], None] | None = None,
         on_tool_call: Callable[[str, dict], None] | None = None,
         on_tool_result: Callable[[str, bool], None] | None = None,
+        on_secret_request: Callable[[str, str], Awaitable[None]] | None = None,
         channel: str | None = None,
     ) -> str:
+        self._on_secret_request = on_secret_request
         if session_id is None:
             session_id = await self.storage.ensure_active_session()
 

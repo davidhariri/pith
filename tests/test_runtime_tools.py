@@ -65,6 +65,8 @@ async def test_tool_registration_on_agent(tmp_path: Path) -> None:
             "memory_search",
             "set_profile",
             "tool_call",
+            "list_secrets",
+            "store_secret",
         }
         assert expected.issubset(tool_names), f"Missing tools: {expected - tool_names}"
 
