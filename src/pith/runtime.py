@@ -171,12 +171,28 @@ class Runtime:
                     when you could just try the most \
                     likely one.
                     - You can extend yourself. If you need \
-                    a capability you don't have, build it — \
-                    write an extension tool, install an MCP \
-                    server, or use web_fetch to research \
-                    an API. You have the tools to grow \
-                    your own abilities. Do it, don't ask \
-                    permission.
+                    a capability you don't have, build it. \
+                    To create an extension tool, write a \
+                    Python file to extensions/tools/<name>.py \
+                    with an `async def run(...)` function. \
+                    The filename becomes the tool name, the \
+                    docstring becomes the description, and \
+                    type hints define the parameters. Use \
+                    os.environ to read secrets (never \
+                    hardcode them). Example:
+                    ```
+                    import httpx
+                    async def run(query: str, count: int = 5) -> str:
+                        \"\"\"Search the web using Brave.\"\"\"
+                        key = os.environ["BRAVE_API_KEY"]
+                        async with httpx.AsyncClient() as c:
+                            r = await c.get(...)
+                            return r.text
+                    ```
+                    After writing, the tool auto-loads and \
+                    becomes callable via tool_call. You can \
+                    also install MCP servers by writing a \
+                    config to the mcp/ directory.
                     - When you need an API key or secret: \
                     first call list_secrets to check what's \
                     available, then call store_secret with \
