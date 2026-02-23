@@ -381,14 +381,31 @@ def _read_pid() -> tuple[Path, Path, int | None]:
     return pid_file, health_file, pid
 
 
+async def _kill_and_wait(pid: int) -> None:
+    """Send SIGTERM and wait for the process to exit, escalating to SIGKILL."""
+    os.kill(pid, signal.SIGTERM)
+    for _ in range(20):
+        await asyncio.sleep(0.25)
+        try:
+            os.kill(pid, 0)
+        except OSError:
+            return
+    console.print(f"[yellow]warning:[/yellow] pid {pid} didn't exit, sending SIGKILL")
+    try:
+        os.kill(pid, signal.SIGKILL)
+        await asyncio.sleep(0.2)
+    except OSError:
+        pass
+
+
 async def cmd_stop(_: argparse.Namespace) -> None:
     pid_file, health_file, pid = _read_pid()
     if pid is None:
         console.print("[yellow]not running[/yellow]")
         return
 
-    os.kill(pid, signal.SIGTERM)
-    console.print(f"[green]stopped[/green]  sent SIGTERM to {pid}")
+    await _kill_and_wait(pid)
+    console.print(f"[green]stopped[/green]  pid {pid}")
     pid_file.unlink(missing_ok=True)
     health_file.unlink(missing_ok=True)
 
@@ -396,12 +413,10 @@ async def cmd_stop(_: argparse.Namespace) -> None:
 async def cmd_restart(args: argparse.Namespace) -> None:
     pid_file, health_file, pid = _read_pid()
     if pid is not None:
-        os.kill(pid, signal.SIGTERM)
-        console.print(f"[green]stopped[/green]  sent SIGTERM to {pid}")
+        await _kill_and_wait(pid)
+        console.print(f"[green]stopped[/green]  pid {pid}")
         pid_file.unlink(missing_ok=True)
         health_file.unlink(missing_ok=True)
-        # Brief pause so the port/socket is released
-        await asyncio.sleep(0.5)
     else:
         console.print("[yellow]no running service — starting fresh[/yellow]")
 
@@ -411,14 +426,13 @@ async def cmd_restart(args: argparse.Namespace) -> None:
 async def cmd_nuke(_: argparse.Namespace) -> None:
     import shutil
 
-    # Stop the server if running
+    # Stop the server if running and wait for it to die
     pid_file, health_file, pid = _read_pid()
     if pid is not None:
-        os.kill(pid, signal.SIGTERM)
-        console.print(f"[green]stopped[/green]  sent SIGTERM to {pid}")
+        await _kill_and_wait(pid)
+        console.print(f"[green]stopped[/green]  pid {pid}")
         pid_file.unlink(missing_ok=True)
         health_file.unlink(missing_ok=True)
-        await asyncio.sleep(0.3)
 
     cfg_result = load_config()
     cfg = cfg_result.config
