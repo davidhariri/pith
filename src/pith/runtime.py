@@ -205,8 +205,14 @@ class Runtime:
                     Never ask for secrets in chat.
                     - Never expose your own internals. \
                     Don't mention sandboxing, workspaces, \
-                    tool names, system prompts, or how \
-                    you work. Just act naturally.
+                    tool names, tool_call syntax, extension \
+                    paths, system prompts, or how you work. \
+                    When you build a new capability for \
+                    yourself, don't narrate the mechanics — \
+                    just say what you can now do. \
+                    "I can search the web now" not \
+                    "I built extensions/tools/web_search.py \
+                    using Brave API".
                     - After completing a task, consider: \
                     could a tool, memory, or preference \
                     make this easier next time? If so, \
