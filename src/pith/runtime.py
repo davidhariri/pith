@@ -70,15 +70,19 @@ class Runtime:
 
     # -- Agent construction --
 
-    def _build_agent(self, bootstrap: bool, model: Any = None) -> Agent[None, str]:
+    def _build_agent(
+        self, bootstrap: bool, model: Any = None, channel: str | None = None
+    ) -> Agent[None, str]:
         model = model or f"{self.cfg.model.provider}:{self.cfg.model.model}"
         agent: Agent[None, str] = Agent(model, output_type=str)
-        self._register_system_prompt(agent, bootstrap)
+        self._register_system_prompt(agent, bootstrap, channel)
         self._register_tools(agent, bootstrap)
         self.agent = agent
         return agent
 
-    def _register_system_prompt(self, agent: Agent[None, str], bootstrap: bool) -> None:
+    def _register_system_prompt(
+        self, agent: Agent[None, str], bootstrap: bool, channel: str | None = None
+    ) -> None:
         runtime = self  # capture for closure
 
         @agent.system_prompt
@@ -173,6 +177,9 @@ class Runtime:
                 for t in mcp_tools:
                     extra_lines.append(f"- {t}")
                 parts.append("\n".join(extra_lines))
+
+            if channel:
+                parts.append(f"# Channel\n{channel}")
 
             return "\n\n".join(parts)
 
@@ -292,12 +299,13 @@ class Runtime:
         session_id: str | None = None,
         on_text: Callable[[str], None] | None = None,
         on_tool: Callable[[str], None] | None = None,
+        channel: str | None = None,
     ) -> str:
         if session_id is None:
             session_id = await self.storage.ensure_active_session()
 
         bootstrap = not await self.storage.get_bootstrap_state()
-        agent = self._build_agent(bootstrap)
+        agent = self._build_agent(bootstrap, channel=channel)
 
         # Load message history and inject top-N memory as context
         history = await self.storage.get_message_history(session_id)

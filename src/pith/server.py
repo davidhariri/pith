@@ -77,6 +77,7 @@ def create_app(runtime: Runtime) -> Starlette:
         body = await request.json()
         message = body["message"]
         session_id = body.get("session_id")
+        channel = body.get("channel")
 
         queue: asyncio.Queue[tuple[str, dict] | None] = asyncio.Queue()
 
@@ -93,6 +94,7 @@ def create_app(runtime: Runtime) -> Starlette:
                     session_id=session_id,
                     on_text=on_text,
                     on_tool=on_tool,
+                    channel=channel,
                 )
                 queue.put_nowait(("done", {"text": full}))
             except Exception as exc:

@@ -10,6 +10,10 @@ import httpx
 
 from ..runtime import Runtime
 
+_CHANNEL = (
+    "Telegram. Basic markdown (bold, italic, code). No file attachments. Keep responses concise."
+)
+
 
 async def run_telegram(runtime: Runtime) -> None:
     cfg = runtime.cfg.telegram
@@ -59,7 +63,7 @@ async def run_telegram(runtime: Runtime) -> None:
                     continue
 
             session_id = await runtime.storage.ensure_active_session()
-            reply = await runtime.chat(text, session_id=session_id)
+            reply = await runtime.chat(text, session_id=session_id, channel=_CHANNEL)
             await send_message(client, message["chat"]["id"], reply)
 
         await asyncio.sleep(0.25)

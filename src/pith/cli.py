@@ -313,7 +313,13 @@ async def cmd_chat(_: argparse.Namespace) -> None:
     except Exception:
         port = DEFAULT_API_PORT
 
-    client = PithClient(f"http://localhost:{port}")
+    client = PithClient(
+        f"http://localhost:{port}",
+        channel=(
+            "Terminal (CLI). Plain text only — no markdown rendering, "
+            "no images, no file attachments. Keep formatting simple."
+        ),
+    )
     try:
         await client.health()
     except Exception:

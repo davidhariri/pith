@@ -13,8 +13,9 @@ from .constants import DEFAULT_API_PORT
 class PithClient:
     """Async client that talks to a running pith server."""
 
-    def __init__(self, base_url: str | None = None) -> None:
+    def __init__(self, base_url: str | None = None, channel: str | None = None) -> None:
         self.base_url = base_url or f"http://localhost:{DEFAULT_API_PORT}"
+        self.channel = channel
         self._http = httpx.AsyncClient(base_url=self.base_url, timeout=120)
 
     async def close(self) -> None:
@@ -54,6 +55,8 @@ class PithClient:
         body: dict = {"message": message}
         if session_id:
             body["session_id"] = session_id
+        if self.channel:
+            body["channel"] = self.channel
 
         full_text = ""
         async with self._http.stream("POST", "/chat", json=body) as resp:
