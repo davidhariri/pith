@@ -14,6 +14,7 @@ dependencies = [
   "PyYAML",
   "starlette",
   "uvicorn",
+  "pydantic-monty>=0.0.7",
 ]
 
 [dependency-groups]

@@ -5,8 +5,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import os
-import shutil
-import subprocess
+import signal
 import sys
 from pathlib import Path
 
@@ -237,82 +236,23 @@ async def _run_foreground() -> None:
         await asyncio.gather(*tasks)
 
 
-CONTAINER_NAME = "pith"
+def _spawn_daemon() -> int:
+    """Spawn `pith run --foreground` as a detached background process. Returns the child PID."""
+    import subprocess
 
+    log_dir = Path(load_config().config.runtime.log_dir)
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_file = log_dir / "server.log"
 
-def _find_project_root() -> Path:
-    """Find the pith source directory (where Dockerfile lives) for docker build context."""
-    # Walk up from the pith package to find the project root
-    pkg_dir = Path(__file__).resolve().parent  # src/pith/
-    for ancestor in (pkg_dir.parent.parent, pkg_dir.parent, pkg_dir):
-        if (ancestor / "Dockerfile").exists():
-            return ancestor
-    raise FileNotFoundError("Cannot find Dockerfile — is pith installed from source?")
-
-
-def _docker_available() -> bool:
-    """Check if docker CLI is available."""
-    return shutil.which("docker") is not None
-
-
-def _container_running() -> bool:
-    """Check if the pith Docker container is running."""
-    try:
-        result = subprocess.run(
-            ["docker", "inspect", "--format={{.State.Running}}", CONTAINER_NAME],
-            capture_output=True,
-            text=True,
+    with log_file.open("a") as lf:
+        proc = subprocess.Popen(
+            [sys.executable, "-m", "pith", "run", "--foreground"],
+            stdout=lf,
+            stderr=lf,
+            stdin=subprocess.DEVNULL,
+            start_new_session=True,
         )
-        return result.returncode == 0 and result.stdout.strip() == "true"
-    except FileNotFoundError:
-        return False
-
-
-def _container_exists() -> bool:
-    """Check if the pith Docker container exists (running or stopped)."""
-    try:
-        result = subprocess.run(
-            ["docker", "inspect", CONTAINER_NAME],
-            capture_output=True,
-            text=True,
-        )
-        return result.returncode == 0
-    except FileNotFoundError:
-        return False
-
-
-def _build_image() -> bool:
-    """Build the pith Docker image. Returns True on success."""
-    project_root = _find_project_root()
-    console.print("[dim]building docker image...[/dim]")
-    result = subprocess.run(
-        ["docker", "build", "-t", CONTAINER_NAME, "."],
-        cwd=str(project_root),
-    )
-    return result.returncode == 0
-
-
-def _spawn_container(workspace: Path, port: int) -> None:
-    """Start the pith Docker container with the workspace mounted."""
-    env_file = workspace / ".env"
-    cmd = [
-        "docker",
-        "run",
-        "-d",
-        "--name",
-        CONTAINER_NAME,
-        "-p",
-        f"{port}:{port}",
-        "-v",
-        f"{workspace.resolve()}:/pith",
-    ]
-    if env_file.exists():
-        cmd += ["--env-file", str(env_file)]
-    cmd.append(CONTAINER_NAME)
-
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    if result.returncode != 0:
-        raise RuntimeError(f"docker run failed: {result.stderr.strip()}")
+    return proc.pid
 
 
 async def _wait_for_server(port: int, timeout: float = 5.0) -> bool:
@@ -340,31 +280,21 @@ async def cmd_run(args: argparse.Namespace) -> None:
 
     await _ensure_configured()
 
-    if not _docker_available():
-        raise SystemExit("docker is not installed or not in PATH")
-
-    if _container_running():
-        console.print("[yellow]already running[/yellow]  container pith")
+    # Check if already running
+    _, _, existing_pid = _read_pid()
+    if existing_pid is not None:
+        console.print(f"[yellow]already running[/yellow]  pid {existing_pid}")
         return
-
-    # Remove stale stopped container
-    if _container_exists():
-        subprocess.run(["docker", "rm", CONTAINER_NAME], capture_output=True)
 
     cfg_result = load_config()
     port = cfg_result.config.server.port
-    workspace = Path(cfg_result.config.runtime.workspace_path)
 
-    if not _build_image():
-        raise SystemExit("docker build failed — check output above")
-
-    _spawn_container(workspace, port)
-
+    pid = _spawn_daemon()
     if await _wait_for_server(port):
-        console.print(f"[green]running[/green]  container pith on port {port}")
+        console.print(f"[green]running[/green]  pid {pid} on port {port}")
     else:
-        console.print("[yellow]spawned[/yellow]  container pith — but health check didn't respond")
-        console.print("  check logs: docker logs pith")
+        console.print(f"[yellow]spawned[/yellow]  pid {pid} — but health check didn't respond")
+        console.print(f"  check logs: {cfg_result.config.runtime.log_dir}/server.log")
 
 
 async def cmd_chat(_: argparse.Namespace) -> None:
@@ -421,43 +351,73 @@ async def cmd_doctor(_: argparse.Namespace) -> None:
 
 
 async def cmd_status(_: argparse.Namespace) -> None:
-    if _container_running():
-        console.print("[green]running[/green]  container pith")
-    else:
-        console.print("[red]stopped[/red]  no running container found")
+    _pid_file, _health_file, pid = _read_pid()
+    if pid is None:
+        console.print("[red]stopped[/red]  no running service found")
         console.print("  run `pith run` to start the service")
+        return
+    console.print(f"[green]running[/green]  pid {pid}")
 
 
-def _stop_container() -> bool:
-    """Stop and remove the pith container. Returns True if a container was stopped."""
-    if not _container_running() and not _container_exists():
-        return False
-    subprocess.run(["docker", "stop", CONTAINER_NAME], capture_output=True)
-    subprocess.run(["docker", "rm", CONTAINER_NAME], capture_output=True)
-    return True
+def _read_pid() -> tuple[Path, Path, int | None]:
+    """Read PID and health file paths. Returns (pid_file, health_file, pid_or_None)."""
+    cfg_result = load_config()
+    workspace = Path(cfg_result.config.runtime.workspace_path)
+    pith_dir = workspace / ".pith"
+    pid_file = pith_dir / "pid"
+    health_file = pith_dir / "healthy"
+
+    if not pid_file.exists():
+        return pid_file, health_file, None
+
+    pid = int(pid_file.read_text().strip())
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        pid_file.unlink(missing_ok=True)
+        health_file.unlink(missing_ok=True)
+        return pid_file, health_file, None
+
+    return pid_file, health_file, pid
 
 
 async def cmd_stop(_: argparse.Namespace) -> None:
-    if _stop_container():
-        console.print("[green]stopped[/green]  container pith")
-    else:
+    pid_file, health_file, pid = _read_pid()
+    if pid is None:
         console.print("[yellow]not running[/yellow]")
+        return
+
+    os.kill(pid, signal.SIGTERM)
+    console.print(f"[green]stopped[/green]  sent SIGTERM to {pid}")
+    pid_file.unlink(missing_ok=True)
+    health_file.unlink(missing_ok=True)
 
 
 async def cmd_restart(args: argparse.Namespace) -> None:
-    if _stop_container():
-        console.print("[green]stopped[/green]  container pith")
+    pid_file, health_file, pid = _read_pid()
+    if pid is not None:
+        os.kill(pid, signal.SIGTERM)
+        console.print(f"[green]stopped[/green]  sent SIGTERM to {pid}")
+        pid_file.unlink(missing_ok=True)
+        health_file.unlink(missing_ok=True)
+        # Brief pause so the port/socket is released
         await asyncio.sleep(0.5)
     else:
-        console.print("[yellow]no running container — starting fresh[/yellow]")
+        console.print("[yellow]no running service — starting fresh[/yellow]")
 
     await cmd_run(args)
 
 
 async def cmd_nuke(_: argparse.Namespace) -> None:
-    # Stop the container if running
-    if _stop_container():
-        console.print("[green]stopped[/green]  container pith")
+    import shutil
+
+    # Stop the server if running
+    pid_file, health_file, pid = _read_pid()
+    if pid is not None:
+        os.kill(pid, signal.SIGTERM)
+        console.print(f"[green]stopped[/green]  sent SIGTERM to {pid}")
+        pid_file.unlink(missing_ok=True)
+        health_file.unlink(missing_ok=True)
         await asyncio.sleep(0.3)
 
     cfg_result = load_config()

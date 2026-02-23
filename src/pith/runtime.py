@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
-import asyncio
+import fnmatch
 import json
+import re
 import textwrap
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+import pydantic_monty
 from pydantic_ai import Agent
 from pydantic_ai._agent_graph import CallToolsNode, ModelRequestNode
 from pydantic_ai.messages import (
@@ -24,7 +26,6 @@ from .constants import (
     DEFAULT_MAX_TOOL_OUTPUT_CHARS,
     DEFAULT_MCP_PREFIX,
     DEFAULT_MEMORY_TOP_N,
-    DEFAULT_TOOL_TIMEOUT_SECONDS,
     SOUL_FILE,
 )
 from .extensions import ExtensionRegistry
@@ -161,8 +162,9 @@ class Runtime:
                     could a tool, memory, or preference \
                     make this easier next time? If so, \
                     offer to create it.
-                    - Use tools when needed for file, \
-                    shell, and memory operations.
+                    - Use tools when needed for file \
+                    and memory operations. Use run_python \
+                    when you need to compute something.
                     - Never fabricate tool outputs.
                     - When a conversation starts, greet \
                     your user warmly and naturally.
@@ -227,24 +229,151 @@ class Runtime:
             target.write_text(text, encoding="utf-8")
             return f"edited {target}"
 
-        @agent.tool_plain(description="Run a shell command in the workspace.")
-        async def bash(command: str) -> str:
-            """Execute a shell command and return its output."""
-            proc = await asyncio.create_subprocess_shell(
-                command,
-                cwd=runtime.workspace,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.STDOUT,
+        @agent.tool_plain(
+            description=(
+                "List files and directories at a workspace path. "
+                "Returns one entry per line. Use glob to filter "
+                "(e.g. '*.py'). Non-recursive by default."
             )
-            try:
-                stdout, _ = await asyncio.wait_for(
-                    proc.communicate(), timeout=DEFAULT_TOOL_TIMEOUT_SECONDS
-                )
-            except TimeoutError:
-                proc.kill()
-                return "command timed out"
+        )
+        async def list_dir(
+            path: str = ".", glob: str | None = None, recursive: bool = False
+        ) -> str:
+            """List directory contents, optionally filtered by glob pattern."""
+            target = runtime._resolve_workspace_path(path)
+            if not target.is_dir():
+                return f"not a directory: {path}"
+            ws_root = runtime.workspace.resolve()
+            if recursive:
+                entries = sorted(target.rglob("*"))
+            else:
+                entries = sorted(target.iterdir())
+            lines: list[str] = []
+            for entry in entries:
+                rel = str(entry.relative_to(ws_root))
+                if glob and not fnmatch.fnmatch(entry.name, glob):
+                    continue
+                suffix = "/" if entry.is_dir() else ""
+                lines.append(f"{rel}{suffix}")
+            output = "\n".join(lines)
+            if len(output) > DEFAULT_MAX_TOOL_OUTPUT_CHARS:
+                output = output[:DEFAULT_MAX_TOOL_OUTPUT_CHARS] + "\n..."
+            return output or "(empty)"
 
-            output = (stdout or b"").decode("utf-8", errors="replace")
+        @agent.tool_plain(
+            description=(
+                "Search file contents for a pattern (regex or literal). "
+                "Searches workspace files matching the optional glob filter. "
+                "Returns matching lines with file path and line number."
+            )
+        )
+        async def file_search(
+            pattern: str,
+            glob: str = "*",
+            recursive: bool = True,
+            literal: bool = False,
+            max_results: int = 50,
+        ) -> str:
+            """Grep-like search across workspace files."""
+            ws_root = runtime.workspace.resolve()
+            if literal:
+                regex = re.compile(re.escape(pattern))
+            else:
+                try:
+                    regex = re.compile(pattern)
+                except re.error as exc:
+                    return f"invalid regex: {exc}"
+            matches: list[str] = []
+            if recursive:
+                files = sorted(ws_root.rglob(glob))
+            else:
+                files = sorted(ws_root.glob(glob))
+            for filepath in files:
+                if not filepath.is_file():
+                    continue
+                # Skip binary / non-text files
+                try:
+                    text = filepath.read_text(encoding="utf-8")
+                except (UnicodeDecodeError, PermissionError):
+                    continue
+                rel = str(filepath.relative_to(ws_root))
+                for lineno, line in enumerate(text.splitlines(), 1):
+                    if regex.search(line):
+                        matches.append(f"{rel}:{lineno}: {line}")
+                        if len(matches) >= max_results:
+                            break
+                if len(matches) >= max_results:
+                    break
+            if not matches:
+                return "no matches"
+            output = "\n".join(matches)
+            if len(output) > DEFAULT_MAX_TOOL_OUTPUT_CHARS:
+                output = output[:DEFAULT_MAX_TOOL_OUTPUT_CHARS] + "\n..."
+            return output
+
+        @agent.tool_plain(
+            description=(
+                "Run Python code in a sandboxed interpreter. "
+                "Has access to read(path), write(path, content), edit(path, old, new) "
+                "functions for file operations. No filesystem, network, or import access "
+                "beyond these functions. Returns the final expression value or printed output."
+            )
+        )
+        async def run_python(code: str) -> str:
+            """Execute Python code safely via Monty."""
+
+            def _host_read(path: str) -> str:
+                target = runtime._resolve_workspace_path(path)
+                return target.read_text(encoding="utf-8")
+
+            def _host_write(path: str, content: str) -> str:
+                target = runtime._resolve_workspace_path(path)
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(content, encoding="utf-8")
+                return f"written {target}"
+
+            def _host_edit(path: str, old: str, new: str) -> str:
+                target = runtime._resolve_workspace_path(path)
+                text = target.read_text(encoding="utf-8")
+                if old not in text:
+                    return "old content not found"
+                text = text.replace(old, new, 1)
+                target.write_text(text, encoding="utf-8")
+                return f"edited {target}"
+
+            external_fns = {
+                "read": _host_read,
+                "write": _host_write,
+                "edit": _host_edit,
+            }
+
+            try:
+                m = pydantic_monty.Monty(
+                    code,
+                    external_functions=list(external_fns.keys()),
+                    script_name="agent.py",
+                )
+
+                # Iterative execution: handle external function calls
+                result = m.start()
+                while result.function_name is not None:
+                    fn = external_fns.get(result.function_name)
+                    if fn is None:
+                        msg = f"unknown function: {result.function_name}"
+                        result = result.resume(return_value=msg)
+                        continue
+                    try:
+                        ret = fn(*result.args, **result.kwargs)
+                    except Exception as exc:
+                        ret = f"{type(exc).__name__}: {exc}"
+                    result = result.resume(return_value=ret)
+
+                output = result.output or ""
+            except pydantic_monty.MontyError as exc:
+                output = f"MontyError: {exc}"
+            except Exception as exc:
+                output = f"{type(exc).__name__}: {exc}"
+
             if len(output) > DEFAULT_MAX_TOOL_OUTPUT_CHARS:
                 output = output[:DEFAULT_MAX_TOOL_OUTPUT_CHARS] + "..."
             return output.strip() if output else ""

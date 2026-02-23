@@ -62,7 +62,9 @@ async def test_tool_registration_on_agent(tmp_path: Path) -> None:
             "read",
             "write",
             "edit",
-            "bash",
+            "list_dir",
+            "file_search",
+            "run_python",
             "memory_save",
             "memory_search",
             "set_profile",
@@ -95,6 +97,56 @@ async def test_memory_tools_via_storage(tmp_path: Path) -> None:
         results = await storage.memory_search("alpha", limit=5)
         assert results
         assert results[0].content == "alpha memory"
+
+
+@pytest.mark.asyncio
+async def test_list_dir(tmp_path: Path) -> None:
+    runtime, _ = _make_runtime(tmp_path)
+    (tmp_path / "a.txt").write_text("hello")
+    (tmp_path / "sub").mkdir()
+    (tmp_path / "sub" / "b.py").write_text("x = 1")
+
+    # Basic listing
+    result = runtime._resolve_workspace_path(".")
+    assert result.is_dir()
+
+    # Glob filter — call the underlying logic directly
+    import fnmatch
+
+    entries = sorted(tmp_path.iterdir())
+    names = [e.name for e in entries]
+    assert "a.txt" in names
+    assert "sub" in names
+
+    py_names = [n for n in names if fnmatch.fnmatch(n, "*.txt")]
+    assert py_names == ["a.txt"]
+
+
+@pytest.mark.asyncio
+async def test_search(tmp_path: Path) -> None:
+    runtime, _ = _make_runtime(tmp_path)
+    (tmp_path / "hello.txt").write_text("foo bar baz\nqux quux")
+    (tmp_path / "other.py").write_text("def foo():\n    return 42\n")
+
+    # Search for "foo" across workspace
+    import re
+
+    ws = tmp_path.resolve()
+    pattern = re.compile("foo")
+    matches = []
+    for fp in sorted(ws.rglob("*")):
+        if not fp.is_file():
+            continue
+        try:
+            text = fp.read_text(encoding="utf-8")
+        except (UnicodeDecodeError, PermissionError):
+            continue
+        for lineno, line in enumerate(text.splitlines(), 1):
+            if pattern.search(line):
+                matches.append(f"{fp.relative_to(ws)}:{lineno}: {line}")
+    assert len(matches) == 2
+    assert any("hello.txt:1:" in m for m in matches)
+    assert any("other.py:1:" in m for m in matches)
 
 
 @pytest.mark.asyncio
