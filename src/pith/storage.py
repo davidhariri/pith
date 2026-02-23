@@ -11,7 +11,11 @@ from pathlib import Path
 from typing import Any
 
 import aiosqlite
-from pydantic_ai.messages import ModelMessage, ModelMessagesTypeAdapter
+from pydantic_ai.messages import (
+    ModelMessage,
+    ModelMessagesTypeAdapter,
+    ModelRequest,
+)
 
 
 @dataclass
@@ -309,7 +313,16 @@ class Storage:
         )
         rows = rows[::-1]  # chronological order
         raw_list = [json.loads(row[0]) for row in rows]
-        return ModelMessagesTypeAdapter.validate_python(raw_list)
+        messages = ModelMessagesTypeAdapter.validate_python(raw_list)
+
+        # Trim orphaned messages from the front — history must start with a
+        # ModelRequest (user message), not a ModelResponse (tool call / text).
+        # The LIMIT can cut in the middle of a tool-call round trip, leaving
+        # a ModelResponse without its preceding request, which providers reject.
+        while messages and not isinstance(messages[0], ModelRequest):
+            messages.pop(0)
+
+        return messages
 
     # -- Compaction --
 
