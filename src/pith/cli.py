@@ -198,7 +198,8 @@ async def cmd_setup(_: argparse.Namespace) -> None:
     await _run_setup(config_path, env_path)
 
 
-async def cmd_run(_: argparse.Namespace) -> None:
+async def _run_foreground() -> None:
+    """Run the server in the foreground (used by the spawned subprocess and Docker)."""
     import uvicorn
 
     from .channels.telegram import run_telegram
@@ -228,18 +229,74 @@ async def cmd_run(_: argparse.Namespace) -> None:
         )
         server = uvicorn.Server(uvi_config)
         tasks.append(server.serve())
-        console.print(f"[green]✓[/green] api on {server_cfg.host}:{server_cfg.port}")
 
         # Telegram (optional, in-process)
         token_env = runtime.cfg.telegram.bot_token_env
         if os.environ.get(token_env):
-            console.print("[green]✓[/green] telegram")
             tasks.append(run_telegram(runtime))
 
-        if _is_interactive():
-            console.print("\n  run [bold]pith chat[/bold] in another terminal to start talking")
-
         await asyncio.gather(*tasks)
+
+
+def _spawn_daemon() -> int:
+    """Spawn `pith run --foreground` as a detached background process. Returns the child PID."""
+    import subprocess
+
+    log_dir = Path(load_config().config.runtime.log_dir)
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_file = log_dir / "server.log"
+
+    with log_file.open("a") as lf:
+        proc = subprocess.Popen(
+            [sys.executable, "-m", "pith", "run", "--foreground"],
+            stdout=lf,
+            stderr=lf,
+            stdin=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+    return proc.pid
+
+
+async def _wait_for_server(port: int, timeout: float = 5.0) -> bool:
+    """Poll the health endpoint until it responds or timeout."""
+    import httpx
+
+    url = f"http://localhost:{port}/health"
+    deadline = asyncio.get_event_loop().time() + timeout
+    async with httpx.AsyncClient(timeout=2) as client:
+        while asyncio.get_event_loop().time() < deadline:
+            try:
+                resp = await client.get(url)
+                if resp.status_code == 200:
+                    return True
+            except Exception:
+                pass
+            await asyncio.sleep(0.2)
+    return False
+
+
+async def cmd_run(args: argparse.Namespace) -> None:
+    if getattr(args, "foreground", False):
+        await _run_foreground()
+        return
+
+    await _ensure_configured()
+
+    # Check if already running
+    _, _, existing_pid = _read_pid()
+    if existing_pid is not None:
+        console.print(f"[yellow]already running[/yellow]  pid {existing_pid}")
+        return
+
+    cfg_result = load_config()
+    port = cfg_result.config.server.port
+
+    pid = _spawn_daemon()
+    if await _wait_for_server(port):
+        console.print(f"[green]running[/green]  pid {pid} on port {port}")
+    else:
+        console.print(f"[yellow]spawned[/yellow]  pid {pid} — but health check didn't respond")
+        console.print(f"  check logs: {cfg_result.config.runtime.log_dir}/server.log")
 
 
 async def cmd_chat(_: argparse.Namespace) -> None:
@@ -332,7 +389,7 @@ async def cmd_stop(_: argparse.Namespace) -> None:
     health_file.unlink(missing_ok=True)
 
 
-async def cmd_restart(_: argparse.Namespace) -> None:
+async def cmd_restart(args: argparse.Namespace) -> None:
     pid_file, health_file, pid = _read_pid()
     if pid is not None:
         os.kill(pid, signal.SIGTERM)
@@ -344,7 +401,7 @@ async def cmd_restart(_: argparse.Namespace) -> None:
     else:
         console.print("[yellow]no running service — starting fresh[/yellow]")
 
-    await cmd_run(_)
+    await cmd_run(args)
 
 
 async def cmd_logs_tail(_: argparse.Namespace) -> None:
@@ -372,8 +429,12 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
 
     sub.add_parser("setup", help="Interactive setup wizard")
-    sub.add_parser("run", help="Run service loop (telegram optional)")
-    sub.add_parser("start", help="Alias for run")
+    run_parser = sub.add_parser("run", help="Start the pith server (daemonizes by default)")
+    run_parser.add_argument(
+        "--foreground", action="store_true", help="Run in foreground (for Docker / debugging)"
+    )
+    start_parser = sub.add_parser("start", help="Alias for run")
+    start_parser.add_argument("--foreground", action="store_true", help=argparse.SUPPRESS)
     sub.add_parser("chat", help="Interactive streaming terminal chat")
     sub.add_parser("status", help="Check if the service is running")
     sub.add_parser("stop", help="Stop the running service")
