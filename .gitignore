@@ -13,3 +13,6 @@ PLAN.md
 .pith/
 workspace/
 events.jsonl
+*.db
+*.db-wal
+*.db-shm
