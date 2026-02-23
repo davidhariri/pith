@@ -404,6 +404,57 @@ async def cmd_restart(args: argparse.Namespace) -> None:
     await cmd_run(args)
 
 
+async def cmd_nuke(_: argparse.Namespace) -> None:
+    # Stop the server if running
+    pid_file, health_file, pid = _read_pid()
+    if pid is not None:
+        os.kill(pid, signal.SIGTERM)
+        console.print(f"[green]stopped[/green]  sent SIGTERM to {pid}")
+        pid_file.unlink(missing_ok=True)
+        health_file.unlink(missing_ok=True)
+        await asyncio.sleep(0.3)
+
+    cfg_result = load_config()
+    cfg = cfg_result.config
+
+    db_path = Path(cfg.runtime.memory_db_path)
+    log_dir = Path(cfg.runtime.log_dir)
+    pith_dir = Path(cfg.runtime.workspace_path) / ".pith"
+
+    removed: list[str] = []
+
+    # Remove database files (main + WAL/SHM)
+    for suffix in ("", "-wal", "-shm"):
+        p = db_path.parent / (db_path.name + suffix)
+        if p.exists():
+            p.unlink()
+            removed.append(str(p))
+
+    # Remove logs
+    if log_dir.exists():
+        for f in log_dir.iterdir():
+            f.unlink()
+        removed.append(str(log_dir / "*"))
+
+    # Remove SOUL.md
+    soul = Path(cfg.runtime.workspace_path) / "SOUL.md"
+    if soul.exists():
+        soul.unlink()
+        removed.append(str(soul))
+
+    # Clean .pith state files (healthy, pid)
+    if pith_dir.exists():
+        for f in pith_dir.iterdir():
+            if f.name != "input_history":
+                f.unlink()
+
+    if removed:
+        for r in removed:
+            console.print(f"  removed {r}")
+    console.print("[green]nuked[/green]  ready for fresh bootstrap")
+    console.print("  run [bold]pith run[/bold] to start fresh")
+
+
 async def cmd_logs_tail(_: argparse.Namespace) -> None:
     cfg_result = load_config()
     log_dir = Path(cfg_result.config.runtime.log_dir)
@@ -439,6 +490,7 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("status", help="Check if the service is running")
     sub.add_parser("stop", help="Stop the running service")
     sub.add_parser("restart", help="Stop and restart the service")
+    sub.add_parser("nuke", help="Wipe database and identity — fresh bootstrap")
     sub.add_parser("doctor", help="Show configuration details")
 
     logs = sub.add_parser("logs", help="View local logs")
@@ -464,6 +516,8 @@ async def run() -> None:
         await cmd_stop(args)
     elif args.command == "restart":
         await cmd_restart(args)
+    elif args.command == "nuke":
+        await cmd_nuke(args)
     elif args.command == "doctor":
         await cmd_doctor(args)
     elif args.command == "logs":
